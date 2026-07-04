@@ -1,0 +1,17 @@
+# .NET
+backend/**/bin/
+backend/**/obj/
+*.user
+
+# Android / Gradle
+android/.gradle/
+android/build/
+android/**/build/
+android/local.properties
+android/.idea/
+android/captures/
+*.apk
+*.aab
+
+# Misc
+.DS_Store

@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="MechanicalRooster.Api.Tests/MechanicalRooster.Api.Tests.csproj" />
+  <Project Path="MechanicalRooster.Api/MechanicalRooster.Api.csproj" />
+</Solution>
