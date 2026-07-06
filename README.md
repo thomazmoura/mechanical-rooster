@@ -39,6 +39,8 @@ The sections below describe the same steps individually — useful for a physica
 - JDK 17 + Android SDK (or just Android Studio) to build the app
 - An Android device on the same network as the API machine
 
+On Debian/Ubuntu, `./install-deps.sh` checks and installs all of the above (PostgreSQL stays in Docker — never installed locally) and symlinks `adb`/`emulator` into `~/.local/bin` so they're on your PATH. It's idempotent and only asks for sudo when something is actually missing.
+
 ## 1. Run the backend
 
 ```bash
