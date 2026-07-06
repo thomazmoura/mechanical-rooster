@@ -1,0 +1,40 @@
+# Production deployment (e.g. a Raspberry Pi): PostgreSQL + the API in containers.
+# Copy .env.example to .env and fill it in, then:
+#
+#   docker compose -f docker-compose.prod.yml up -d --build   # build on this machine
+#   docker compose -f docker-compose.prod.yml up -d           # pull $API_IMAGE instead
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: mechanicalrooster-db
+    environment:
+      POSTGRES_USER: rooster
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it in .env}
+      POSTGRES_DB: mechanicalrooster
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rooster -d mechanicalrooster"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build: ./backend
+    image: ${API_IMAGE:-mechanicalrooster-api}
+    container_name: mechanicalrooster-api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Default: Host=postgres;Port=5432;Database=mechanicalrooster;Username=rooster;Password=${POSTGRES_PASSWORD}
+      Jwt__Key: ${JWT_KEY:?set it in .env}
+      Auth__GoogleClientId: ${GOOGLE_CLIENT_ID:-}
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:

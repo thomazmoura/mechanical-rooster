@@ -16,3 +16,4 @@ android/captures/
 # Misc
 .DS_Store
 .dev/
+.env

@@ -59,7 +59,7 @@ curl -s -X POST http://localhost:5000/tasks \
 
 For anything beyond local development, set a real `Jwt:Key` and remove `Auth:DevBypassToken` (see `appsettings.Development.json`).
 
-Make sure the phone can reach port 5000 (e.g. `sudo ufw allow 5000` on Ubuntu). Find the machine's LAN IP with `ip -4 addr` — you'll enter `http://<that-ip>:5000` in the app's sign-in screen.
+Make sure the phone can reach port 5000 (e.g. `sudo ufw allow 5000` on Ubuntu). Find the machine's LAN IP with `ip -4 addr` — you'll bake `http://<that-ip>:5000` into the app build (see section 3).
 
 ## 2. Google OAuth setup (one-time)
 
@@ -78,15 +78,62 @@ The PoC only supports Google accounts. In [Google Cloud Console](https://console
 
 If `ROOSTER_GOOGLE_WEB_CLIENT_ID` is left empty, the app shows a **Dev sign-in** button instead of Google — handy for testing the whole flow before OAuth is configured (requires the server's dev bypass).
 
-## 3. Build & install the app
+## 3. Install the app on your phone
+
+Build the APK with the server URL baked in (the app then connects without asking; the URL stays reachable behind an **Advanced** toggle on the sign-in screen):
 
 ```bash
 cd android
-./gradlew assembleDebug
-adb install app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleDebug -PROOSTER_API_BASE_URL=http://<api-machine-ip>:5000
 ```
 
-On first launch: enter the server URL, sign in with Google (once — the session token lasts ~180 days), allow notifications, and optionally grant exact alarms if the banner appears. Traffic is plain HTTP, intended for a trusted LAN only.
+Leave the property out (or blank) and the sign-in screen shows the URL field instead. Instead of the `-P` flag you can also set `ROOSTER_API_BASE_URL` in `android/gradle.properties`, or export `ORG_GRADLE_PROJECT_ROOSTER_API_BASE_URL` (that's how CI/CD would inject the production URL).
+
+The APK lands at `android/app/build/outputs/apk/debug/app-debug.apk`. Get it onto the phone either way:
+
+**Via USB (adb).** On the phone, enable Developer options (Settings → About phone → tap *Build number* 7×) and turn on *USB debugging*, plug it in, accept the authorization prompt, then:
+
+```bash
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+(`adb devices` should list the phone, not just an emulator. Wireless works too: Developer options → *Wireless debugging* → `adb pair`.)
+
+**Without a cable (sideload).** Copy `app-debug.apk` to the phone however you like (Drive, messaging app, `python3 -m http.server` on the APK folder and download it in the phone's browser), tap the file, and allow *Install unknown apps* for whichever app opened it.
+
+On first launch: sign in with Google (once — the session token lasts ~180 days), allow notifications, and optionally grant exact alarms if the banner appears. Traffic is plain HTTP, intended for a trusted LAN only.
+
+> Debug builds are the intended path for this PoC — `assembleRelease` produces an unsigned APK phones refuse to install, and no release signing config exists yet.
+
+## Deploy the API with Docker (e.g. Raspberry Pi)
+
+`backend/Dockerfile` builds a container image of the API for both `amd64` and `arm64`, and `docker-compose.prod.yml` runs it together with PostgreSQL. On the Pi (or any Docker host):
+
+```bash
+git clone <this-repo> && cd MechanicalRooster
+cp .env.example .env        # then fill in POSTGRES_PASSWORD, JWT_KEY, GOOGLE_CLIENT_ID
+docker compose -f docker-compose.prod.yml up -d --build
+curl http://localhost:5000/health
+```
+
+`--build` compiles natively on the host (arm64 on a Pi), and migrations apply automatically on startup. Postgres is not exposed outside the compose network; only the API's port 5000 is published.
+
+Alternatively, build the multi-arch image on a faster machine and push it to a registry — the SDK stage cross-compiles, so no emulation is involved:
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t ghcr.io/<you>/mechanicalrooster-api --push backend/
+```
+
+Then on the Pi set `API_IMAGE=ghcr.io/<you>/mechanicalrooster-api` in `.env` and run `up -d` without `--build`. The same `buildx` command is what a CI/CD pipeline would run to publish the image.
+
+## Configuration
+
+| Setting | Development | Production / CI |
+|---|---|---|
+| App: API base URL | `ROOSTER_API_BASE_URL` in `android/gradle.properties` (dev.sh bakes `http://localhost:5000` for the emulator) | `-PROOSTER_API_BASE_URL=...` or env `ORG_GRADLE_PROJECT_ROOSTER_API_BASE_URL` |
+| App: Google client ID | `ROOSTER_GOOGLE_WEB_CLIENT_ID` in `android/gradle.properties` | `-P` flag or env `ORG_GRADLE_PROJECT_ROOSTER_GOOGLE_WEB_CLIENT_ID` |
+| API: any appsettings key | `appsettings.Development.json` | env vars with `__` as the separator (e.g. `Jwt__Key`, `ConnectionStrings__Default`) — see `docker-compose.prod.yml` / `.env.example` |
 
 ## API
 
@@ -110,8 +157,10 @@ cd android && ./gradlew test     # fuzzy-matcher + reminder-scheduling unit test
 ## Repo layout
 
 ```
-├── docker-compose.yml            # PostgreSQL 17
+├── docker-compose.yml            # dev: PostgreSQL 17 only
+├── docker-compose.prod.yml       # prod: PostgreSQL + API containers (see .env.example)
 ├── backend/
+│   ├── Dockerfile                # multi-arch (amd64/arm64) API image
 │   ├── MechanicalRooster.Api/    # minimal-API endpoints, EF Core + Npgsql, JWT auth
 │   └── MechanicalRooster.Api.Tests/
 └── android/

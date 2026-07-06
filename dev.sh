@@ -95,7 +95,9 @@ fi
 
 # --- 4. Build the APK (overlaps with emulator boot) ---------------------------
 log "Building the app (gradle assembleDebug)..."
-( cd "$ROOT/android" && ./gradlew --console=plain -q assembleDebug )
+# Bake the URL in: adb reverse (step 7) makes localhost:$API_PORT reach the host API.
+( cd "$ROOT/android" && ./gradlew --console=plain -q assembleDebug \
+    -PROOSTER_API_BASE_URL="http://localhost:$API_PORT" )
 APK="$ROOT/android/app/build/outputs/apk/debug/app-debug.apk"
 
 # --- 5. Wait for the API ------------------------------------------------------

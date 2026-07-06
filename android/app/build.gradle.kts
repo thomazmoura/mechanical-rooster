@@ -19,6 +19,9 @@ android {
 
         val webClientId = (project.findProperty("ROOSTER_GOOGLE_WEB_CLIENT_ID") as? String).orEmpty()
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$webClientId\"")
+
+        val apiBaseUrl = (project.findProperty("ROOSTER_API_BASE_URL") as? String).orEmpty()
+        buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
     }
 
     buildTypes {

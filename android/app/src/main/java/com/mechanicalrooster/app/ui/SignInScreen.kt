@@ -13,6 +13,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,11 +24,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.mechanicalrooster.app.BuildConfig
 
 @Composable
 fun SignInScreen(viewModel: AppViewModel) {
     val context = LocalContext.current
-    var baseUrl by rememberSaveable { mutableStateOf("http://192.168.1.100:5000") }
+    var baseUrl by rememberSaveable { mutableStateOf(BuildConfig.API_BASE_URL) }
+    // With a build-time URL the field is tucked behind "Advanced"; without one
+    // the user has to enter it, so it starts visible.
+    var showAdvanced by rememberSaveable { mutableStateOf(BuildConfig.API_BASE_URL.isBlank()) }
 
     Column(
         modifier = Modifier
@@ -46,16 +51,17 @@ fun SignInScreen(viewModel: AppViewModel) {
 
         Spacer(Modifier.height(32.dp))
 
-        OutlinedTextField(
-            value = baseUrl,
-            onValueChange = { baseUrl = it },
-            label = { Text("Server URL") },
-            supportingText = { Text("The machine on your network running the API") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        Spacer(Modifier.height(16.dp))
+        if (showAdvanced) {
+            OutlinedTextField(
+                value = baseUrl,
+                onValueChange = { baseUrl = it },
+                label = { Text("Server URL") },
+                supportingText = { Text("The machine on your network running the API") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(16.dp))
+        }
 
         Button(
             onClick = { viewModel.signInWithGoogle(context, baseUrl) },
@@ -80,6 +86,13 @@ fun SignInScreen(viewModel: AppViewModel) {
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("Dev sign-in (server dev bypass)")
+            }
+        }
+
+        if (BuildConfig.API_BASE_URL.isNotBlank()) {
+            Spacer(Modifier.height(8.dp))
+            TextButton(onClick = { showAdvanced = !showAdvanced }) {
+                Text(if (showAdvanced) "Hide advanced" else "Advanced")
             }
         }
 
