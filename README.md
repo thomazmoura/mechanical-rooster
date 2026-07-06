@@ -17,6 +17,22 @@ Each task snapshots two user-configurable defaults at creation time (Settings sc
 
 The server is the source of truth for tasks and settings; the app mirrors open tasks into a local Room database and drives all notifications from exact alarms, so the phone doesn't need to reach the server for reminders to fire. Tapping **Done** on the notification (or in the list) stops the nagging immediately and syncs the completion to the API (retried later if you're offline).
 
+## Quick start (one command)
+
+```bash
+./dev.sh
+```
+
+Starts PostgreSQL (docker compose), the API (`dotnet watch run` — backend code changes hot-reload without a restart), and an Android emulator, then builds, installs and launches the app on it. The script streams API logs; **Ctrl+C stops the API** but leaves the database and emulator running so the next `./dev.sh` is fast. Stop everything with:
+
+```bash
+./dev.sh down
+```
+
+Inside the emulator the API is reachable at `http://localhost:5000` (the script sets up `adb reverse`; `http://10.0.2.2:5000` also works). Requires at least one AVD (create one in Android Studio's Device Manager); it uses the first one listed, or set `AVD=<name> ./dev.sh` to pick. Logs and pidfiles live in `.dev/`.
+
+The sections below describe the same steps individually — useful for a physical device or a first-time setup.
+
 ## Prerequisites
 
 - .NET 10 SDK, Docker (for the API machine)
