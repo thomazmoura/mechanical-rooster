@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,7 +20,10 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Snooze
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
@@ -37,7 +41,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -54,6 +60,7 @@ fun MainScreen(
     requestNotificationPermission: () -> Unit,
 ) {
     val tasks by viewModel.openTasks.collectAsState()
+    val session by viewModel.session.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
 
@@ -126,7 +133,13 @@ fun MainScreen(
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(tasks, key = { it.id }) { task ->
-                        TaskRow(task = task, onDone = { viewModel.completeTask(task.id) })
+                        TaskRow(
+                            task = task,
+                            mediumWaitMinutes = session?.mediumWaitMinutes ?: 60,
+                            longWaitMinutes = session?.longWaitMinutes ?: 240,
+                            onDone = { viewModel.completeTask(task.id) },
+                            onSnooze = { minutes -> viewModel.snoozeTask(task.id, minutes) },
+                        )
                         HorizontalDivider()
                     }
                 }
@@ -188,7 +201,13 @@ private fun QuickAdd(viewModel: AppViewModel) {
 }
 
 @Composable
-private fun TaskRow(task: OpenTaskEntity, onDone: () -> Unit) {
+private fun TaskRow(
+    task: OpenTaskEntity,
+    mediumWaitMinutes: Int,
+    longWaitMinutes: Int,
+    onDone: () -> Unit,
+    onSnooze: (Int) -> Unit,
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -203,24 +222,54 @@ private fun TaskRow(task: OpenTaskEntity, onDone: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                "added ${relativeTime(task.createdAtMillis)} · nags every ${task.repeatIntervalMinutes} min",
+                "next nag ${relativeFuture(task.nextFireAtMillis)} · every ${task.repeatIntervalMinutes} min",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+
+        var menuExpanded by remember { mutableStateOf(false) }
+        Box {
+            IconButton(onClick = { menuExpanded = true }) {
+                Icon(Icons.Filled.Snooze, contentDescription = "Snooze")
+            }
+            DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                DropdownMenuItem(
+                    text = { Text("Medium wait (${formatDuration(mediumWaitMinutes)})") },
+                    onClick = {
+                        menuExpanded = false
+                        onSnooze(mediumWaitMinutes)
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("Long wait (${formatDuration(longWaitMinutes)})") },
+                    onClick = {
+                        menuExpanded = false
+                        onSnooze(longWaitMinutes)
+                    },
+                )
+            }
+        }
+
         FilledTonalIconButton(onClick = onDone) {
             Icon(Icons.Filled.Check, contentDescription = "Mark done")
         }
     }
 }
 
-private fun relativeTime(epochMillis: Long): String {
-    val elapsed = System.currentTimeMillis() - epochMillis
-    val minutes = TimeUnit.MILLISECONDS.toMinutes(elapsed)
+private fun relativeFuture(epochMillis: Long): String {
+    val remaining = epochMillis - System.currentTimeMillis()
+    val minutes = TimeUnit.MILLISECONDS.toMinutes(remaining)
     return when {
-        minutes < 1 -> "just now"
-        minutes < 60 -> "$minutes min ago"
-        minutes < 60 * 24 -> "${minutes / 60} h ago"
-        else -> "${minutes / (60 * 24)} d ago"
+        minutes < 1 -> "now"
+        minutes < 60 -> "in $minutes min"
+        minutes < 60 * 24 -> "in ${minutes / 60} h"
+        else -> "in ${minutes / (60 * 24)} d"
     }
+}
+
+private fun formatDuration(minutes: Int): String = when {
+    minutes < 60 -> "${minutes}m"
+    minutes % 60 == 0 -> "${minutes / 60}h"
+    else -> "${minutes / 60}h ${minutes % 60}m"
 }

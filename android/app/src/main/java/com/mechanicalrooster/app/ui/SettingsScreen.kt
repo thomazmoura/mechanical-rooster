@@ -38,10 +38,15 @@ fun SettingsScreen(
 ) {
     var initialDelay by rememberSaveable { mutableStateOf(session.initialDelayMinutes.toString()) }
     var repeatInterval by rememberSaveable { mutableStateOf(session.repeatIntervalMinutes.toString()) }
+    var mediumWait by rememberSaveable { mutableStateOf(session.mediumWaitMinutes.toString()) }
+    var longWait by rememberSaveable { mutableStateOf(session.longWaitMinutes.toString()) }
 
     val initialDelayValue = initialDelay.toIntOrNull()
     val repeatIntervalValue = repeatInterval.toIntOrNull()
-    val valid = (initialDelayValue ?: 0) >= 1 && (repeatIntervalValue ?: 0) >= 1
+    val mediumWaitValue = mediumWait.toIntOrNull()
+    val longWaitValue = longWait.toIntOrNull()
+    val valid = (initialDelayValue ?: 0) >= 1 && (repeatIntervalValue ?: 0) >= 1 &&
+        (mediumWaitValue ?: 0) >= 1 && (longWaitValue ?: 0) >= 1
 
     Scaffold(
         topBar = {
@@ -92,9 +97,46 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(24.dp))
 
+            Text(
+                "Snooze options shown on tasks and reminders. Pick how far each pushes the next nag.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            OutlinedTextField(
+                value = mediumWait,
+                onValueChange = { mediumWait = it },
+                label = { Text("Medium wait (minutes)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                isError = mediumWait.isNotEmpty() && (mediumWaitValue ?: 0) < 1,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            OutlinedTextField(
+                value = longWait,
+                onValueChange = { longWait = it },
+                label = { Text("Long wait (minutes)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                isError = longWait.isNotEmpty() && (longWaitValue ?: 0) < 1,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(Modifier.height(24.dp))
+
             Button(
                 onClick = {
-                    viewModel.saveSettings(initialDelayValue!!, repeatIntervalValue!!, onDone = onBack)
+                    viewModel.saveSettings(
+                        initialDelayValue!!,
+                        repeatIntervalValue!!,
+                        mediumWaitValue!!,
+                        longWaitValue!!,
+                        onDone = onBack,
+                    )
                 },
                 enabled = valid && !viewModel.busy,
                 modifier = Modifier.fillMaxWidth(),

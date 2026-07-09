@@ -9,7 +9,13 @@ import java.util.concurrent.TimeUnit
 
 class ApiClient(private val session: SessionStore) {
 
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        // Always serialize every field. Without this, kotlinx omits values equal to
+        // their declared default (e.g. mediumWaitMinutes=60, longWaitMinutes=240), so
+        // the server sees them as 0 and rejects the settings PUT with a 400.
+        encodeDefaults = true
+    }
 
     private val okHttp = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)

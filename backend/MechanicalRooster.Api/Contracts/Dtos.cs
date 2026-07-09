@@ -6,10 +6,14 @@ public record GoogleLoginRequest(string IdToken);
 
 public record LoginResponse(string Token, string Email, string? Name, SettingsDto Settings);
 
-public record SettingsDto(int InitialDelayMinutes, int RepeatIntervalMinutes)
+public record SettingsDto(
+    int InitialDelayMinutes,
+    int RepeatIntervalMinutes,
+    int MediumWaitMinutes,
+    int LongWaitMinutes)
 {
     public static SettingsDto From(User user) =>
-        new(user.InitialDelayMinutes, user.RepeatIntervalMinutes);
+        new(user.InitialDelayMinutes, user.RepeatIntervalMinutes, user.MediumWaitMinutes, user.LongWaitMinutes);
 }
 
 public record CreateTaskRequest(string Title);

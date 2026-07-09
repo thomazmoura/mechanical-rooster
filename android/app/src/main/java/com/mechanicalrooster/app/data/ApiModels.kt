@@ -6,7 +6,12 @@ import kotlinx.serialization.Serializable
 data class LoginRequest(val idToken: String)
 
 @Serializable
-data class SettingsDto(val initialDelayMinutes: Int, val repeatIntervalMinutes: Int)
+data class SettingsDto(
+    val initialDelayMinutes: Int,
+    val repeatIntervalMinutes: Int,
+    val mediumWaitMinutes: Int = 60,
+    val longWaitMinutes: Int = 240,
+)
 
 @Serializable
 data class LoginResponse(

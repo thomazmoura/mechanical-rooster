@@ -34,6 +34,19 @@ class TaskRepository(
         pushCompletion(id)
     }
 
+    /**
+     * Pushes the next nag out by [minutes] from now, reschedules the alarm and
+     * clears the current reminder. Purely local: the new fire time lives in Room
+     * and is preserved across syncs, so the server never needs to know.
+     */
+    suspend fun snoozeTask(id: String, minutes: Int) {
+        val task = dao.getById(id) ?: return
+        val next = task.copy(nextFireAtMillis = System.currentTimeMillis() + minutes * 60_000L)
+        dao.upsert(next)
+        scheduler.schedule(next)
+        scheduler.dismissNotification(id)
+    }
+
     suspend fun sync() {
         flushPendingCompletions()
 

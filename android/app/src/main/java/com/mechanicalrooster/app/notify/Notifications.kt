@@ -14,6 +14,7 @@ import com.mechanicalrooster.app.db.OpenTaskEntity
 object Notifications {
     const val CHANNEL_ID = "task_reminders"
     const val EXTRA_TASK_ID = "taskId"
+    const val EXTRA_SNOOZE_MINUTES = "snoozeMinutes"
 
     fun ensureChannel(context: Context) {
         val channel = NotificationChannel(
@@ -26,7 +27,7 @@ object Notifications {
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
-    fun showReminder(context: Context, task: OpenTaskEntity) {
+    fun showReminder(context: Context, task: OpenTaskEntity, mediumWaitMinutes: Int, longWaitMinutes: Int) {
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
 
         val openApp = PendingIntent.getActivity(
@@ -41,12 +42,16 @@ object Notifications {
             Intent(context, ReminderActionReceiver::class.java).putExtra(EXTRA_TASK_ID, task.id),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        val mediumIntent = snoozeIntent(context, task.id, mediumWaitMinutes, task.id.hashCode() + 1)
+        val longIntent = snoozeIntent(context, task.id, longWaitMinutes, task.id.hashCode() + 2)
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(task.title)
             .setContentText(context.getString(R.string.notification_still_pending))
             .setContentIntent(openApp)
+            .addAction(0, context.getString(R.string.notification_action_medium_wait), mediumIntent)
+            .addAction(0, context.getString(R.string.notification_action_long_wait), longIntent)
             .addAction(0, context.getString(R.string.notification_action_done), doneIntent)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
@@ -62,4 +67,14 @@ object Notifications {
     fun cancel(context: Context, taskId: String) {
         NotificationManagerCompat.from(context).cancel(taskId.hashCode())
     }
+
+    private fun snoozeIntent(context: Context, taskId: String, minutes: Int, requestCode: Int): PendingIntent =
+        PendingIntent.getBroadcast(
+            context,
+            requestCode,
+            Intent(context, SnoozeActionReceiver::class.java)
+                .putExtra(EXTRA_TASK_ID, taskId)
+                .putExtra(EXTRA_SNOOZE_MINUTES, minutes),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
 }

@@ -95,21 +95,28 @@ public class ApiTests : IClassFixture<TestAppFactory>
         var defaults = await client.GetFromJsonAsync<SettingsDto>("/me/settings");
         Assert.Equal(60, defaults!.InitialDelayMinutes);
         Assert.Equal(15, defaults.RepeatIntervalMinutes);
+        Assert.Equal(60, defaults.MediumWaitMinutes);
+        Assert.Equal(240, defaults.LongWaitMinutes);
 
-        var putResponse = await client.PutAsJsonAsync("/me/settings", new SettingsDto(30, 5));
+        var putResponse = await client.PutAsJsonAsync("/me/settings", new SettingsDto(30, 5, 90, 300));
         putResponse.EnsureSuccessStatusCode();
 
         var updated = await client.GetFromJsonAsync<SettingsDto>("/me/settings");
         Assert.Equal(30, updated!.InitialDelayMinutes);
         Assert.Equal(5, updated.RepeatIntervalMinutes);
+        Assert.Equal(90, updated.MediumWaitMinutes);
+        Assert.Equal(300, updated.LongWaitMinutes);
 
         var task = await (await client.PostAsJsonAsync("/tasks", new CreateTaskRequest("water plants")))
             .Content.ReadFromJsonAsync<TaskDto>();
         Assert.Equal(30, task!.InitialDelayMinutes);
         Assert.Equal(5, task.RepeatIntervalMinutes);
 
-        var invalid = await client.PutAsJsonAsync("/me/settings", new SettingsDto(0, 5));
+        var invalid = await client.PutAsJsonAsync("/me/settings", new SettingsDto(0, 5, 90, 300));
         Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+
+        var invalidWait = await client.PutAsJsonAsync("/me/settings", new SettingsDto(30, 5, 0, 300));
+        Assert.Equal(HttpStatusCode.BadRequest, invalidWait.StatusCode);
     }
 
     [Fact]

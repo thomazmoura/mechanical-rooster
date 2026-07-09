@@ -94,10 +94,22 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    fun saveSettings(initialDelayMinutes: Int, repeatIntervalMinutes: Int, onDone: () -> Unit) {
+    fun snoozeTask(id: String, minutes: Int) {
+        viewModelScope.launch {
+            container.repository.snoozeTask(id, minutes)
+        }
+    }
+
+    fun saveSettings(
+        initialDelayMinutes: Int,
+        repeatIntervalMinutes: Int,
+        mediumWaitMinutes: Int,
+        longWaitMinutes: Int,
+        onDone: () -> Unit,
+    ) {
         launchBusy {
             val saved = container.repository.updateSettings(
-                SettingsDto(initialDelayMinutes, repeatIntervalMinutes),
+                SettingsDto(initialDelayMinutes, repeatIntervalMinutes, mediumWaitMinutes, longWaitMinutes),
             )
             container.session.saveSettings(saved)
             onDone()

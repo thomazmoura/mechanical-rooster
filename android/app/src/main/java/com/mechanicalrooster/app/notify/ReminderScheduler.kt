@@ -33,6 +33,11 @@ class ReminderScheduler(private val context: Context) {
         Notifications.cancel(context, taskId)
     }
 
+    /** Clears the currently shown reminder without touching the scheduled alarm. */
+    fun dismissNotification(taskId: String) {
+        Notifications.cancel(context, taskId)
+    }
+
     private fun reminderIntent(taskId: String): PendingIntent =
         PendingIntent.getBroadcast(
             context,
