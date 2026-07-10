@@ -14,12 +14,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Snooze
@@ -32,6 +35,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -52,6 +56,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -59,11 +64,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.relentlessbadger.app.data.Recurrence
+import com.relentlessbadger.app.data.RecurUnit
+import com.relentlessbadger.app.data.recurrence
 import com.relentlessbadger.app.db.OpenTaskEntity
+import kotlinx.coroutines.delay
+import java.time.DayOfWeek
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -145,30 +157,87 @@ fun MainScreen(
                     )
                 }
             } else {
+                // Ticks so scheduled tasks move into the active section when
+                // their start time passes without any data change.
+                val nowMillis by produceState(System.currentTimeMillis()) {
+                    while (true) {
+                        delay(30_000)
+                        value = System.currentTimeMillis()
+                    }
+                }
+                // Keyed on the start time, not nextFire, so a snoozed task
+                // doesn't jump into "Scheduled".
+                val (scheduled, active) = tasks.partition {
+                    (it.firstWarningAtMillis ?: 0L) > nowMillis
+                }
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(tasks, key = { it.id }) { task ->
+                    items(active, key = { it.id }) { task ->
                         TaskRow(
                             task = task,
+                            scheduled = false,
                             mediumWaitMinutes = session?.mediumWaitMinutes ?: 60,
                             longWaitMinutes = session?.longWaitMinutes ?: 240,
                             onDone = { viewModel.completeTask(task.id) },
                             onSnooze = { minutes -> viewModel.snoozeTask(task.id, minutes) },
+                            onEdit = { viewModel.beginEditSchedule(task) },
                         )
                         HorizontalDivider()
+                    }
+                    if (scheduled.isNotEmpty()) {
+                        item(key = "scheduled-header") {
+                            Text(
+                                "Scheduled",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 16.dp, bottom = 4.dp),
+                            )
+                        }
+                        items(scheduled, key = { it.id }) { task ->
+                            TaskRow(
+                                task = task,
+                                scheduled = true,
+                                mediumWaitMinutes = session?.mediumWaitMinutes ?: 60,
+                                longWaitMinutes = session?.longWaitMinutes ?: 240,
+                                onDone = { viewModel.completeTask(task.id) },
+                                onSnooze = { minutes -> viewModel.snoozeTask(task.id, minutes) },
+                                onEdit = { viewModel.beginEditSchedule(task) },
+                            )
+                            HorizontalDivider()
+                        }
                     }
                 }
             }
         }
     }
+
+    viewModel.editingTask?.let { task ->
+        EditScheduleDialog(
+            task = task,
+            onDismiss = { viewModel.editingTask = null },
+            onSave = { firstWarningAtMillis, repeatIntervalMinutes, recurrence ->
+                viewModel.saveSchedule(task.id, firstWarningAtMillis, repeatIntervalMinutes, recurrence)
+            },
+        )
+    }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun QuickAdd(viewModel: AppViewModel) {
-    var showDatePicker by remember { mutableStateOf(false) }
-    var showTimePicker by remember { mutableStateOf(false) }
-    var pickedDateMillis by remember { mutableStateOf<Long?>(null) }
+    var showDateTimePicker by remember { mutableStateOf(false) }
+    var showRecurrencePicker by remember { mutableStateOf(false) }
+    // A repeating task needs a start time; route through the picker first.
+    var pendingAddTitle by remember { mutableStateOf<String?>(null) }
     val firstWarning = viewModel.quickAddFirstWarningAtMillis
+    val recurrence = viewModel.quickAddRecurrence
+
+    fun addOrPickTime(title: String) {
+        if (viewModel.quickAddRecurrence != null && viewModel.quickAddFirstWarningAtMillis == null) {
+            pendingAddTitle = title
+            showDateTimePicker = true
+        } else {
+            viewModel.addTask(title)
+        }
+    }
 
     Column {
         OutlinedTextField(
@@ -177,7 +246,7 @@ private fun QuickAdd(viewModel: AppViewModel) {
             placeholder = { Text("What needs doing right away?") },
             singleLine = true,
             leadingIcon = {
-                IconButton(onClick = { showDatePicker = true }) {
+                IconButton(onClick = { showDateTimePicker = true }) {
                     Icon(
                         Icons.Filled.Schedule,
                         contentDescription = "Set first reminder time",
@@ -190,11 +259,24 @@ private fun QuickAdd(viewModel: AppViewModel) {
                 }
             },
             trailingIcon = {
-                FilledTonalIconButton(
-                    onClick = { viewModel.addTask() },
-                    enabled = viewModel.quickAddText.isNotBlank() && !viewModel.busy,
-                ) {
-                    Icon(Icons.Filled.Add, contentDescription = "Add task")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { showRecurrencePicker = true }) {
+                        Icon(
+                            Icons.Filled.Repeat,
+                            contentDescription = "Set recurrence",
+                            tint = if (recurrence != null) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                LocalContentColor.current
+                            },
+                        )
+                    }
+                    FilledTonalIconButton(
+                        onClick = { addOrPickTime(viewModel.quickAddText) },
+                        enabled = viewModel.quickAddText.isNotBlank() && !viewModel.busy,
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = "Add task")
+                    }
                 }
             },
             modifier = Modifier
@@ -202,20 +284,37 @@ private fun QuickAdd(viewModel: AppViewModel) {
                 .padding(top = 8.dp),
         )
 
-        if (firstWarning != null) {
-            AssistChip(
-                onClick = { showDatePicker = true },
-                label = { Text("First nag ${formatDateTime(firstWarning)}") },
-                leadingIcon = { Icon(Icons.Filled.Schedule, contentDescription = null) },
-                trailingIcon = {
-                    Icon(
-                        Icons.Filled.Close,
-                        contentDescription = "Clear first reminder time",
-                        modifier = Modifier.clickable { viewModel.quickAddFirstWarningAtMillis = null },
-                    )
-                },
-                modifier = Modifier.padding(top = 4.dp),
-            )
+        Row {
+            if (firstWarning != null) {
+                AssistChip(
+                    onClick = { showDateTimePicker = true },
+                    label = { Text("First nag ${formatDateTime(firstWarning)}") },
+                    leadingIcon = { Icon(Icons.Filled.Schedule, contentDescription = null) },
+                    trailingIcon = {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = "Clear first reminder time",
+                            modifier = Modifier.clickable { viewModel.quickAddFirstWarningAtMillis = null },
+                        )
+                    },
+                    modifier = Modifier.padding(top = 4.dp, end = 8.dp),
+                )
+            }
+            if (recurrence != null) {
+                AssistChip(
+                    onClick = { showRecurrencePicker = true },
+                    label = { Text(recurrenceLabel(recurrence)) },
+                    leadingIcon = { Icon(Icons.Filled.Repeat, contentDescription = null) },
+                    trailingIcon = {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = "Clear recurrence",
+                            modifier = Modifier.clickable { viewModel.quickAddRecurrence = null },
+                        )
+                    },
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
         }
 
         if (viewModel.suggestions.isNotEmpty()) {
@@ -226,7 +325,7 @@ private fun QuickAdd(viewModel: AppViewModel) {
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { viewModel.addTask(suggestion) }
+                                .clickable { addOrPickTime(suggestion) }
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
                         ) {
                             Icon(
@@ -248,55 +347,91 @@ private fun QuickAdd(viewModel: AppViewModel) {
         }
     }
 
-    if (showDatePicker) {
+    if (showDateTimePicker) {
+        DateTimePickerFlow(
+            initialMillis = firstWarning,
+            onDismiss = {
+                showDateTimePicker = false
+                pendingAddTitle = null
+            },
+            onPicked = { millis ->
+                viewModel.quickAddFirstWarningAtMillis = millis
+                showDateTimePicker = false
+                pendingAddTitle?.let { title ->
+                    pendingAddTitle = null
+                    viewModel.addTask(title)
+                }
+            },
+        )
+    }
+
+    if (showRecurrencePicker) {
+        RecurrencePickerDialog(
+            initial = recurrence,
+            onDismiss = { showRecurrencePicker = false },
+            onConfirm = {
+                viewModel.quickAddRecurrence = it
+                showRecurrencePicker = false
+            },
+        )
+    }
+}
+
+/**
+ * The two-step date-then-time picker. The DatePicker returns UTC midnight for
+ * the chosen calendar day; the result combines that date with the picked local
+ * time in the device zone.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DateTimePickerFlow(
+    initialMillis: Long?,
+    onDismiss: () -> Unit,
+    onPicked: (Long) -> Unit,
+) {
+    var pickedDateMillis by remember { mutableStateOf<Long?>(null) }
+
+    if (pickedDateMillis == null) {
         val dateState = rememberDatePickerState(
-            initialSelectedDateMillis = firstWarning ?: System.currentTimeMillis(),
+            initialSelectedDateMillis = initialMillis ?: System.currentTimeMillis(),
         )
         DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
+            onDismissRequest = onDismiss,
             confirmButton = {
                 TextButton(
                     enabled = dateState.selectedDateMillis != null,
-                    onClick = {
-                        pickedDateMillis = dateState.selectedDateMillis
-                        showDatePicker = false
-                        showTimePicker = true
-                    },
+                    onClick = { pickedDateMillis = dateState.selectedDateMillis },
                 ) { Text("Next") }
             },
             dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+                TextButton(onClick = onDismiss) { Text("Cancel") }
             },
         ) {
             DatePicker(state = dateState)
         }
-    }
-
-    if (showTimePicker) {
-        val initial = firstWarning?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()) }
+    } else {
+        val initial = initialMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()) }
         val timeState = rememberTimePickerState(
             initialHour = initial?.hour ?: 9,
             initialMinute = initial?.minute ?: 0,
         )
         AlertDialog(
-            onDismissRequest = { showTimePicker = false },
+            onDismissRequest = onDismiss,
             confirmButton = {
                 TextButton(onClick = {
-                    pickedDateMillis?.let { dateMillis ->
-                        // DatePicker returns UTC midnight for the chosen calendar day;
-                        // combine that date with the picked local time.
-                        val date = Instant.ofEpochMilli(dateMillis).atZone(ZoneOffset.UTC).toLocalDate()
-                        viewModel.quickAddFirstWarningAtMillis = date
-                            .atTime(timeState.hour, timeState.minute)
+                    val date = Instant.ofEpochMilli(pickedDateMillis!!)
+                        .atZone(ZoneOffset.UTC)
+                        .toLocalDate()
+                    onPicked(
+                        date.atTime(timeState.hour, timeState.minute)
                             .atZone(ZoneId.systemDefault())
                             .toInstant()
-                            .toEpochMilli()
-                    }
-                    showTimePicker = false
+                            .toEpochMilli(),
+                    )
                 }) { Text("Set") }
             },
             dismissButton = {
-                TextButton(onClick = { showTimePicker = false }) { Text("Cancel") }
+                TextButton(onClick = onDismiss) { Text("Cancel") }
             },
             text = { TimePicker(state = timeState) },
         )
@@ -311,15 +446,18 @@ private fun formatDateTime(epochMillis: Long): String =
 @Composable
 private fun TaskRow(
     task: OpenTaskEntity,
+    scheduled: Boolean,
     mediumWaitMinutes: Int,
     longWaitMinutes: Int,
     onDone: () -> Unit,
     onSnooze: (Int) -> Unit,
+    onEdit: () -> Unit,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(onClick = onEdit)
             .padding(vertical = 8.dp),
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -329,33 +467,48 @@ private fun TaskRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            val schedule = if (scheduled) {
+                "starts ${formatDateTime(task.firstWarningAtMillis ?: task.nextFireAtMillis)}"
+            } else {
+                "next nag ${relativeFuture(task.nextFireAtMillis)} · every ${task.repeatIntervalMinutes} min"
+            }
             Text(
-                "next nag ${relativeFuture(task.nextFireAtMillis)} · every ${task.repeatIntervalMinutes} min",
+                schedule,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            task.recurrence()?.let { recurrence ->
+                Text(
+                    recurrenceLabel(recurrence),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
         }
 
-        var menuExpanded by remember { mutableStateOf(false) }
-        Box {
-            IconButton(onClick = { menuExpanded = true }) {
-                Icon(Icons.Filled.Snooze, contentDescription = "Snooze")
-            }
-            DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                DropdownMenuItem(
-                    text = { Text("Medium wait (${formatDuration(mediumWaitMinutes)})") },
-                    onClick = {
-                        menuExpanded = false
-                        onSnooze(mediumWaitMinutes)
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text("Long wait (${formatDuration(longWaitMinutes)})") },
-                    onClick = {
-                        menuExpanded = false
-                        onSnooze(longWaitMinutes)
-                    },
-                )
+        // Snoozing a task that hasn't started nagging is meaningless.
+        if (!scheduled) {
+            var menuExpanded by remember { mutableStateOf(false) }
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(Icons.Filled.Snooze, contentDescription = "Snooze")
+                }
+                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Medium wait (${formatDuration(mediumWaitMinutes)})") },
+                        onClick = {
+                            menuExpanded = false
+                            onSnooze(mediumWaitMinutes)
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Long wait (${formatDuration(longWaitMinutes)})") },
+                        onClick = {
+                            menuExpanded = false
+                            onSnooze(longWaitMinutes)
+                        },
+                    )
+                }
             }
         }
 
@@ -364,6 +517,212 @@ private fun TaskRow(
         }
     }
 }
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RecurrencePickerDialog(
+    initial: Recurrence?,
+    onDismiss: () -> Unit,
+    onConfirm: (Recurrence?) -> Unit,
+) {
+    var unit by remember { mutableStateOf(initial?.unit) }
+    var everyNText by remember { mutableStateOf((initial?.everyN ?: 1).toString()) }
+    var daysOfWeek by remember {
+        mutableStateOf(initial?.takeIf { it.unit == RecurUnit.WEEKS }?.daysOfWeek ?: 0)
+    }
+    val everyN = everyNText.toIntOrNull()
+    val valid = unit == null ||
+        (everyN != null && everyN >= 1 && (unit != RecurUnit.WEEKS || daysOfWeek in 1..127))
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Repeat") },
+        confirmButton = {
+            TextButton(
+                enabled = valid,
+                onClick = {
+                    onConfirm(
+                        unit?.let { Recurrence(everyN!!, it, if (it == RecurUnit.WEEKS) daysOfWeek else 0) },
+                    )
+                },
+            ) { Text("Set") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+        text = {
+            Column {
+                Row {
+                    FilterChip(
+                        selected = unit == null,
+                        onClick = { unit = null },
+                        label = { Text("None") },
+                        modifier = Modifier.padding(end = 8.dp),
+                    )
+                    FilterChip(
+                        selected = unit == RecurUnit.DAYS,
+                        onClick = { unit = RecurUnit.DAYS },
+                        label = { Text("Daily") },
+                        modifier = Modifier.padding(end = 8.dp),
+                    )
+                    FilterChip(
+                        selected = unit == RecurUnit.WEEKS,
+                        onClick = {
+                            unit = RecurUnit.WEEKS
+                            if (daysOfWeek == 0) daysOfWeek = defaultWeekdayBit()
+                        },
+                        label = { Text("Weekly") },
+                    )
+                }
+                if (unit != null) {
+                    OutlinedTextField(
+                        value = everyNText,
+                        onValueChange = { everyNText = it },
+                        label = { Text(if (unit == RecurUnit.DAYS) "Every N days" else "Every N weeks") },
+                        singleLine = true,
+                        isError = everyN == null || everyN < 1,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                }
+                if (unit == RecurUnit.WEEKS) {
+                    FlowRow(modifier = Modifier.padding(top = 12.dp)) {
+                        DayOfWeek.entries.forEach { day ->
+                            val bit = 1 shl day.ordinal
+                            FilterChip(
+                                selected = daysOfWeek and bit != 0,
+                                onClick = { daysOfWeek = daysOfWeek xor bit },
+                                label = { Text(day.getDisplayName(TextStyle.SHORT, Locale.getDefault())) },
+                                modifier = Modifier.padding(end = 6.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun EditScheduleDialog(
+    task: OpenTaskEntity,
+    onDismiss: () -> Unit,
+    onSave: (firstWarningAtMillis: Long?, repeatIntervalMinutes: Int, recurrence: Recurrence?) -> Unit,
+) {
+    var startMillis by remember { mutableStateOf(task.firstWarningAtMillis) }
+    var recurrence by remember { mutableStateOf(task.recurrence()) }
+    var intervalText by remember { mutableStateOf(task.repeatIntervalMinutes.toString()) }
+    var showDateTimePicker by remember { mutableStateOf(false) }
+    var showRecurrencePicker by remember { mutableStateOf(false) }
+    val interval = intervalText.toIntOrNull()
+    val valid = interval != null && interval >= 1 && (recurrence == null || startMillis != null)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(task.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        confirmButton = {
+            TextButton(
+                enabled = valid,
+                onClick = { onSave(startMillis, interval!!, recurrence) },
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+        text = {
+            Column {
+                AssistChip(
+                    onClick = { showDateTimePicker = true },
+                    label = {
+                        Text(startMillis?.let { "Starts ${formatDateTime(it)}" } ?: "Set start time")
+                    },
+                    leadingIcon = { Icon(Icons.Filled.Schedule, contentDescription = null) },
+                    trailingIcon = {
+                        if (startMillis != null) {
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = "Clear start time",
+                                modifier = Modifier.clickable {
+                                    startMillis = null
+                                    recurrence = null
+                                },
+                            )
+                        }
+                    },
+                )
+                AssistChip(
+                    onClick = { showRecurrencePicker = true },
+                    label = { Text(recurrence?.let { recurrenceLabel(it) } ?: "Does not repeat") },
+                    leadingIcon = { Icon(Icons.Filled.Repeat, contentDescription = null) },
+                    trailingIcon = {
+                        if (recurrence != null) {
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = "Clear recurrence",
+                                modifier = Modifier.clickable { recurrence = null },
+                            )
+                        }
+                    },
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                OutlinedTextField(
+                    value = intervalText,
+                    onValueChange = { intervalText = it },
+                    label = { Text("Nag every N minutes") },
+                    singleLine = true,
+                    isError = interval == null || interval < 1,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+                if (recurrence != null && startMillis == null) {
+                    Text(
+                        "A repeating task needs a start time.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+            }
+        },
+    )
+
+    if (showDateTimePicker) {
+        DateTimePickerFlow(
+            initialMillis = startMillis,
+            onDismiss = { showDateTimePicker = false },
+            onPicked = {
+                startMillis = it
+                showDateTimePicker = false
+            },
+        )
+    }
+
+    if (showRecurrencePicker) {
+        RecurrencePickerDialog(
+            initial = recurrence,
+            onDismiss = { showRecurrencePicker = false },
+            onConfirm = {
+                recurrence = it
+                showRecurrencePicker = false
+            },
+        )
+    }
+}
+
+/** "every day", "every 2 weeks · Mon, Wed, Fri" */
+private fun recurrenceLabel(recurrence: Recurrence): String {
+    val cadence = when (recurrence.unit) {
+        RecurUnit.DAYS -> if (recurrence.everyN == 1) "every day" else "every ${recurrence.everyN} days"
+        RecurUnit.WEEKS -> if (recurrence.everyN == 1) "every week" else "every ${recurrence.everyN} weeks"
+    }
+    if (recurrence.unit != RecurUnit.WEEKS) return cadence
+    val days = DayOfWeek.entries
+        .filter { recurrence.daysOfWeek and (1 shl it.ordinal) != 0 }
+        .joinToString(", ") { it.getDisplayName(TextStyle.SHORT, Locale.getDefault()) }
+    return "$cadence · $days"
+}
+
+/** Bit for today's weekday, the natural starting selection. */
+private fun defaultWeekdayBit(): Int =
+    1 shl java.time.LocalDate.now().dayOfWeek.ordinal
 
 private fun relativeFuture(epochMillis: Long): String {
     val remaining = epochMillis - System.currentTimeMillis()

@@ -3,6 +3,7 @@ package com.relentlessbadger.app.scenario
 import android.app.Application
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.relentlessbadger.app.data.Recurrence
 import com.relentlessbadger.app.data.SettingsDto
 import com.relentlessbadger.app.data.TaskDto
 import com.relentlessbadger.app.data.TaskRepository
@@ -84,10 +85,20 @@ class BadgerScenario {
 
     // --- When ---
 
-    suspend fun whenTaskCreated(title: String, firstWarningAtMillis: Long? = null): OpenTaskEntity =
-        repository.addTask(title, firstWarningAtMillis)
+    suspend fun whenTaskCreated(
+        title: String,
+        firstWarningAtMillis: Long? = null,
+        recurrence: Recurrence? = null,
+    ): OpenTaskEntity = repository.addTask(title, firstWarningAtMillis, recurrence)
 
     suspend fun whenTaskCompleted(id: String) = repository.completeTask(id)
+
+    suspend fun whenScheduleEdited(
+        id: String,
+        firstWarningAtMillis: Long?,
+        repeatIntervalMinutes: Int,
+        recurrence: Recurrence? = null,
+    ) = repository.editSchedule(id, firstWarningAtMillis, repeatIntervalMinutes, recurrence)
 
     suspend fun whenSnoozed(id: String, minutes: Int) = repository.snoozeTask(id, minutes)
 
@@ -152,6 +163,7 @@ class BadgerScenario {
         assertTrue("expected no creates pushed", server.receivedCreates.isEmpty())
         assertTrue("expected no completions pushed", server.receivedCompletions.isEmpty())
         assertTrue("expected no settings pushed", server.receivedSettingsPuts.isEmpty())
+        assertTrue("expected no schedule updates pushed", server.receivedScheduleUpdates.isEmpty())
     }
 
     fun close() = db.close()

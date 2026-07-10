@@ -25,7 +25,21 @@ public record CreateTaskRequest(
     Guid? Id = null,
     DateTime? CreatedAt = null,
     int? InitialDelayMinutes = null,
-    int? RepeatIntervalMinutes = null);
+    int? RepeatIntervalMinutes = null,
+    int? RecurEveryN = null,
+    string? RecurUnit = null,
+    int? RecurDaysOfWeek = null,
+    Guid? SeriesId = null);
+
+// Full-state update: the client always sends the complete desired schedule,
+// so null on a nullable field means "clear it" (no PATCH absent-vs-null games).
+public record UpdateTaskScheduleRequest(
+    DateTime? FirstWarningAt,
+    int RepeatIntervalMinutes,
+    int? RecurEveryN,
+    string? RecurUnit,
+    int? RecurDaysOfWeek,
+    Guid? SeriesId);
 
 public record TaskDto(
     Guid Id,
@@ -34,9 +48,14 @@ public record TaskDto(
     DateTime? CompletedAt,
     int InitialDelayMinutes,
     int RepeatIntervalMinutes,
-    DateTime? FirstWarningAt)
+    DateTime? FirstWarningAt,
+    int? RecurEveryN,
+    string? RecurUnit,
+    int? RecurDaysOfWeek,
+    Guid? SeriesId)
 {
     public static TaskDto From(TaskItem task) => new(
         task.Id, task.Title, task.CreatedAt, task.CompletedAt,
-        task.InitialDelayMinutes, task.RepeatIntervalMinutes, task.FirstWarningAt);
+        task.InitialDelayMinutes, task.RepeatIntervalMinutes, task.FirstWarningAt,
+        task.RecurEveryN, task.RecurUnit, task.RecurDaysOfWeek, task.SeriesId);
 }

@@ -25,6 +25,12 @@ interface BadgerApi {
     @POST("tasks")
     suspend fun createTask(@Body request: CreateTaskRequest): TaskDto
 
+    @PUT("tasks/{id}/schedule")
+    suspend fun updateTaskSchedule(
+        @Path("id") id: String,
+        @Body request: UpdateTaskScheduleRequest,
+    ): TaskDto
+
     @POST("tasks/{id}/complete")
     suspend fun completeTask(@Path("id") id: String): TaskDto
 

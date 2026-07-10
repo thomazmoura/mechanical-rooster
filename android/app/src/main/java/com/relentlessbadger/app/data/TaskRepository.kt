@@ -32,12 +32,22 @@ class TaskRepository(
      * Creates the task locally and schedules its first reminder immediately.
      * The id is minted here so a later push (and any retry of it) is
      * idempotent; the row stays flagged pendingCreate until acknowledged.
+     * A [recurrence] requires [firstWarningAtMillis]: that time is the first
+     * occurrence and anchors the series' cadence and time-of-day.
      */
-    suspend fun addTask(title: String, firstWarningAtMillis: Long? = null): OpenTaskEntity {
+    suspend fun addTask(
+        title: String,
+        firstWarningAtMillis: Long? = null,
+        recurrence: Recurrence? = null,
+    ): OpenTaskEntity {
+        if (recurrence != null) {
+            requireNotNull(firstWarningAtMillis) { "a recurring task needs a first occurrence time" }
+        }
         val now = timeSource.now()
         val session = settings.current()
+        val id = UUID.randomUUID().toString()
         val entity = OpenTaskEntity(
-            id = UUID.randomUUID().toString(),
+            id = id,
             title = title,
             createdAtMillis = now,
             initialDelayMinutes = session.initialDelayMinutes,
@@ -47,6 +57,10 @@ class TaskRepository(
                 now, session.initialDelayMinutes, session.repeatIntervalMinutes,
                 now, firstWarningAtMillis,
             ),
+            recurEveryN = recurrence?.everyN,
+            recurUnit = recurrence?.unit?.wire(),
+            recurDaysOfWeek = recurrence?.takeIf { it.unit == RecurUnit.WEEKS }?.daysOfWeek,
+            seriesId = recurrence?.let { id },
             pendingCreate = true,
         )
         dao.upsert(entity)
@@ -59,10 +73,79 @@ class TaskRepository(
     /**
      * Marks the task done locally, so the nagging stops immediately even
      * offline. The row stays flagged pendingDone until a sync pushes it.
+     * Completing a recurring task spawns the next occurrence as a fresh
+     * pendingCreate row, so recurrence works offline too.
      */
     suspend fun completeTask(id: String) {
+        val task = dao.getById(id) ?: return
         dao.markPendingDone(id)
         scheduler.cancel(id)
+        task.recurrence()?.let { spawnNextOccurrence(task, it) }
+        syncScheduler.requestSync()
+    }
+
+    /**
+     * The next occurrence's id is derived from the series and its fire time,
+     * so a double-complete (or two devices completing the same occurrence)
+     * mints the same id and dedupes locally and via the idempotent create.
+     */
+    private suspend fun spawnNextOccurrence(done: OpenTaskEntity, recurrence: Recurrence) {
+        val anchor = done.firstWarningAtMillis ?: done.createdAtMillis
+        val nextAt = computeNextOccurrence(anchor, recurrence, afterMillis = timeSource.now())
+        val seriesId = done.seriesId ?: done.id
+        val nextId = UUID.nameUUIDFromBytes("$seriesId:$nextAt".toByteArray()).toString()
+        if (dao.getById(nextId) != null) return
+        val next = done.copy(
+            id = nextId,
+            createdAtMillis = timeSource.now(),
+            firstWarningAtMillis = nextAt,
+            nextFireAtMillis = nextAt,
+            seriesId = seriesId,
+            pendingCreate = true,
+            pendingDone = false,
+            pendingUpdate = false,
+        )
+        dao.upsert(next)
+        scheduler.schedule(next)
+        // No titleDao.recordUse: spawns shouldn't inflate suggestion ranks.
+    }
+
+    /**
+     * Rewrites the task's schedule: when it starts nagging, how often it
+     * re-nags, and whether it recurs. Takes effect locally right away and
+     * stays flagged pendingUpdate until a sync pushes it. Editing the start
+     * time of a recurring task re-anchors the whole series.
+     */
+    suspend fun editSchedule(
+        id: String,
+        firstWarningAtMillis: Long?,
+        repeatIntervalMinutes: Int,
+        recurrence: Recurrence?,
+    ) {
+        require(repeatIntervalMinutes >= 1) { "repeat interval must be at least 1 minute" }
+        if (recurrence != null) {
+            requireNotNull(firstWarningAtMillis) { "a recurring task needs a first occurrence time" }
+        }
+        val task = dao.getById(id) ?: return
+        val updated = task.copy(
+            firstWarningAtMillis = firstWarningAtMillis,
+            repeatIntervalMinutes = repeatIntervalMinutes,
+            recurEveryN = recurrence?.everyN,
+            recurUnit = recurrence?.unit?.wire(),
+            recurDaysOfWeek = recurrence?.takeIf { it.unit == RecurUnit.WEEKS }?.daysOfWeek,
+            seriesId = recurrence?.let { task.seriesId ?: task.id },
+            nextFireAtMillis = computeNextFire(
+                task.createdAtMillis, task.initialDelayMinutes, repeatIntervalMinutes,
+                timeSource.now(), firstWarningAtMillis,
+            ),
+            // Always flagged, even while pendingCreate: if a create response
+            // was lost, the server already has the old values and a re-pushed
+            // create is ignored idempotently — only the follow-up PUT repairs it.
+            pendingUpdate = true,
+        )
+        dao.upsert(updated)
+        scheduler.schedule(updated)
+        scheduler.dismissNotification(id)
         syncScheduler.requestSync()
     }
 
@@ -132,14 +215,21 @@ class TaskRepository(
      */
     suspend fun sync() {
         pushPendingCreates()
+        pushPendingUpdates()
         flushPendingCompletions()
         pushSettingsIfDirty()
 
         val remote = apiClient.api().getTasks("open")
         val known = dao.getAll().associateBy { it.id }
         val entities = remote.map { dto ->
-            // Preserve the local nag state for tasks we already track.
-            known[dto.id] ?: dto.toEntity(timeSource.now())
+            val local = known[dto.id] ?: return@map dto.toEntity(timeSource.now())
+            // Local pending changes win until pushed; otherwise adopt schedule
+            // edits made on other devices while preserving the local nag state.
+            if (local.pendingCreate || local.pendingUpdate || local.pendingDone) {
+                local
+            } else {
+                local.mergeServerSchedule(dto, timeSource.now())
+            }
         }
         dao.upsertAll(entities)
         val remoteIds = remote.map { it.id }.toSet()
@@ -177,6 +267,10 @@ class TaskRepository(
                         createdAt = Instant.ofEpochMilli(task.createdAtMillis).toString(),
                         initialDelayMinutes = task.initialDelayMinutes,
                         repeatIntervalMinutes = task.repeatIntervalMinutes,
+                        recurEveryN = task.recurEveryN,
+                        recurUnit = task.recurUnit,
+                        recurDaysOfWeek = task.recurDaysOfWeek,
+                        seriesId = task.seriesId,
                     ),
                 )
                 dao.clearPendingCreate(task.id)
@@ -195,6 +289,35 @@ class TaskRepository(
                     // Other 4xx would repeat forever; drop the flag instead of
                     // wedging sync. 5xx: keep the flag and retry next sync.
                     e.code() in 400..499 -> dao.clearPendingCreate(task.id)
+                }
+            }
+        }
+    }
+
+    private suspend fun pushPendingUpdates() {
+        for (task in dao.getPendingUpdate()) {
+            try {
+                apiClient.api().updateTaskSchedule(
+                    task.id,
+                    UpdateTaskScheduleRequest(
+                        firstWarningAt = task.firstWarningAtMillis
+                            ?.let { Instant.ofEpochMilli(it).toString() },
+                        repeatIntervalMinutes = task.repeatIntervalMinutes,
+                        recurEveryN = task.recurEveryN,
+                        recurUnit = task.recurUnit,
+                        recurDaysOfWeek = task.recurDaysOfWeek,
+                        seriesId = task.seriesId,
+                    ),
+                )
+                dao.clearPendingUpdate(task.id)
+            } catch (e: HttpException) {
+                when {
+                    e.code() == 401 -> throw e
+                    // 404: gone remotely (completed/deleted elsewhere) — the
+                    // edit is moot and the pull will prune the row. Other 4xx
+                    // would repeat forever; drop the flag instead of wedging
+                    // sync. 5xx: keep the flag and retry next sync.
+                    e.code() in 400..499 -> dao.clearPendingUpdate(task.id)
                 }
             }
         }
@@ -247,6 +370,38 @@ fun TaskDto.toEntity(nowMillis: Long): OpenTaskEntity {
             createdAtMillis, initialDelayMinutes, repeatIntervalMinutes,
             nowMillis, firstWarningAtMillis,
         ),
+        recurEveryN = recurEveryN,
+        recurUnit = recurUnit,
+        recurDaysOfWeek = recurDaysOfWeek,
+        seriesId = seriesId,
+    )
+}
+
+/**
+ * Adopts the server's schedule (start time, nag interval, recurrence) into a
+ * local row with no pending changes. The live fire time is only recomputed
+ * when the schedule actually changed — an unchanged pull must not clobber a
+ * local snooze.
+ */
+fun OpenTaskEntity.mergeServerSchedule(dto: TaskDto, nowMillis: Long): OpenTaskEntity {
+    val dtoFirstWarningAtMillis = dto.firstWarningAt?.let { Instant.parse(it).toEpochMilli() }
+    val scheduleChanged = dtoFirstWarningAtMillis != firstWarningAtMillis ||
+        dto.repeatIntervalMinutes != repeatIntervalMinutes
+    return copy(
+        firstWarningAtMillis = dtoFirstWarningAtMillis,
+        repeatIntervalMinutes = dto.repeatIntervalMinutes,
+        recurEveryN = dto.recurEveryN,
+        recurUnit = dto.recurUnit,
+        recurDaysOfWeek = dto.recurDaysOfWeek,
+        seriesId = dto.seriesId,
+        nextFireAtMillis = if (scheduleChanged) {
+            computeNextFire(
+                createdAtMillis, initialDelayMinutes, dto.repeatIntervalMinutes,
+                nowMillis, dtoFirstWarningAtMillis,
+            )
+        } else {
+            nextFireAtMillis
+        },
     )
 }
 

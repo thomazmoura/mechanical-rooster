@@ -32,6 +32,23 @@ data class CreateTaskRequest(
     val createdAt: String? = null,
     val initialDelayMinutes: Int? = null,
     val repeatIntervalMinutes: Int? = null,
+    // Recurrence rule; recurDaysOfWeek is a bitmask (bit 0 = Monday .. bit 6 =
+    // Sunday) used only when recurUnit is "weeks". The server just stores it.
+    val recurEveryN: Int? = null,
+    val recurUnit: String? = null,
+    val recurDaysOfWeek: Int? = null,
+    val seriesId: String? = null,
+)
+
+// Full-state schedule update: null on a nullable field means "clear it".
+@Serializable
+data class UpdateTaskScheduleRequest(
+    val firstWarningAt: String?,
+    val repeatIntervalMinutes: Int,
+    val recurEveryN: Int?,
+    val recurUnit: String?,
+    val recurDaysOfWeek: Int?,
+    val seriesId: String?,
 )
 
 @Serializable
@@ -43,4 +60,8 @@ data class TaskDto(
     val initialDelayMinutes: Int,
     val repeatIntervalMinutes: Int,
     val firstWarningAt: String? = null,
+    val recurEveryN: Int? = null,
+    val recurUnit: String? = null,
+    val recurDaysOfWeek: Int? = null,
+    val seriesId: String? = null,
 )

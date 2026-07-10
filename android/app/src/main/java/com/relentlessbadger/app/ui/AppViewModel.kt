@@ -14,6 +14,7 @@ import com.relentlessbadger.app.AppContainer
 import com.relentlessbadger.app.BuildConfig
 import com.relentlessbadger.app.auth.GoogleSignIn
 import com.relentlessbadger.app.data.LoginRequest
+import com.relentlessbadger.app.data.Recurrence
 import com.relentlessbadger.app.data.SettingsDto
 import com.relentlessbadger.app.db.OpenTaskEntity
 import com.relentlessbadger.app.fuzzy.Fuzzy
@@ -34,6 +35,12 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
 
     /** Optional absolute time (epoch millis) for the next task's first reminder. */
     var quickAddFirstWarningAtMillis by mutableStateOf<Long?>(null)
+
+    /** Optional recurrence rule for the next task; requires a first-reminder time. */
+    var quickAddRecurrence by mutableStateOf<Recurrence?>(null)
+
+    /** Task whose schedule is being edited in the dialog, if any. */
+    var editingTask by mutableStateOf<OpenTaskEntity?>(null)
 
     var titleHistory by mutableStateOf<List<String>>(emptyList())
         private set
@@ -93,10 +100,17 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         val trimmed = title.trim()
         if (trimmed.isEmpty()) return
         val firstWarningAtMillis = quickAddFirstWarningAtMillis
+        val recurrence = quickAddRecurrence
+        if (recurrence != null && firstWarningAtMillis == null) {
+            // The UI routes through the date picker first; this is a backstop.
+            errorMessage = "Pick a start time for a repeating task."
+            return
+        }
         quickAddText = ""
         quickAddFirstWarningAtMillis = null
+        quickAddRecurrence = null
         launchBusy {
-            container.repository.addTask(trimmed, firstWarningAtMillis)
+            container.repository.addTask(trimmed, firstWarningAtMillis, recurrence)
             titleHistory = container.repository.titles()
         }
     }
@@ -104,6 +118,22 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     fun completeTask(id: String) {
         viewModelScope.launch {
             container.repository.completeTask(id)
+        }
+    }
+
+    fun beginEditSchedule(task: OpenTaskEntity) {
+        editingTask = task
+    }
+
+    fun saveSchedule(
+        id: String,
+        firstWarningAtMillis: Long?,
+        repeatIntervalMinutes: Int,
+        recurrence: Recurrence?,
+    ) {
+        editingTask = null
+        launchBusy {
+            container.repository.editSchedule(id, firstWarningAtMillis, repeatIntervalMinutes, recurrence)
         }
     }
 
@@ -133,6 +163,9 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
             container.repository.signOut()
             container.session.clear()
             quickAddText = ""
+            quickAddFirstWarningAtMillis = null
+            quickAddRecurrence = null
+            editingTask = null
             titleHistory = emptyList()
         }
     }

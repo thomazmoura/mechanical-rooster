@@ -9,6 +9,7 @@ import com.relentlessbadger.app.data.SettingsDto
 import com.relentlessbadger.app.data.SettingsStore
 import com.relentlessbadger.app.data.TaskDto
 import com.relentlessbadger.app.data.TimeSource
+import com.relentlessbadger.app.data.UpdateTaskScheduleRequest
 import com.relentlessbadger.app.db.OpenTaskEntity
 import com.relentlessbadger.app.notify.ReminderScheduler
 import com.relentlessbadger.app.sync.SyncScheduler
@@ -45,6 +46,7 @@ class FakeBadgerApi(private val clock: TimeSource) : BadgerApi {
     val receivedCreates = mutableListOf<CreateTaskRequest>()
     val receivedCompletions = mutableListOf<String>()
     val receivedSettingsPuts = mutableListOf<SettingsDto>()
+    val receivedScheduleUpdates = mutableListOf<Pair<String, UpdateTaskScheduleRequest>>()
 
     fun openTasks(): List<TaskDto> = tasks.values.filter { it.completedAt == null }
 
@@ -55,6 +57,10 @@ class FakeBadgerApi(private val clock: TimeSource) : BadgerApi {
         initialDelayMinutes: Int = settings.initialDelayMinutes,
         repeatIntervalMinutes: Int = settings.repeatIntervalMinutes,
         firstWarningAtMillis: Long? = null,
+        recurEveryN: Int? = null,
+        recurUnit: String? = null,
+        recurDaysOfWeek: Int? = null,
+        seriesId: String? = null,
     ): TaskDto {
         val dto = TaskDto(
             id = id,
@@ -64,6 +70,10 @@ class FakeBadgerApi(private val clock: TimeSource) : BadgerApi {
             initialDelayMinutes = initialDelayMinutes,
             repeatIntervalMinutes = repeatIntervalMinutes,
             firstWarningAt = firstWarningAtMillis?.let { Instant.ofEpochMilli(it).toString() },
+            recurEveryN = recurEveryN,
+            recurUnit = recurUnit,
+            recurDaysOfWeek = recurDaysOfWeek,
+            seriesId = seriesId,
         )
         tasks[id] = dto
         return dto
@@ -109,10 +119,30 @@ class FakeBadgerApi(private val clock: TimeSource) : BadgerApi {
             initialDelayMinutes = request.initialDelayMinutes ?: settings.initialDelayMinutes,
             repeatIntervalMinutes = request.repeatIntervalMinutes ?: settings.repeatIntervalMinutes,
             firstWarningAt = request.firstWarningAt,
+            recurEveryN = request.recurEveryN,
+            recurUnit = request.recurUnit,
+            recurDaysOfWeek = request.recurDaysOfWeek,
+            seriesId = request.seriesId,
         )
         tasks[dto.id] = dto
         if (dropCreateResponses) throw ConnectException("response lost")
         return dto
+    }
+
+    override suspend fun updateTaskSchedule(id: String, request: UpdateTaskScheduleRequest): TaskDto {
+        gate()
+        val task = tasks[id] ?: throw httpError(404)
+        receivedScheduleUpdates += id to request
+        val updated = task.copy(
+            firstWarningAt = request.firstWarningAt,
+            repeatIntervalMinutes = request.repeatIntervalMinutes,
+            recurEveryN = request.recurEveryN,
+            recurUnit = request.recurUnit,
+            recurDaysOfWeek = request.recurDaysOfWeek,
+            seriesId = request.seriesId,
+        )
+        tasks[id] = updated
+        return updated
     }
 
     override suspend fun completeTask(id: String): TaskDto {

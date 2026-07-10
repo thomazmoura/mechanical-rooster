@@ -16,7 +16,13 @@ import kotlinx.coroutines.flow.Flow
  * truth the app runs off: tasks are created here first and the alarm
  * receivers read from here, so everything works offline and across reboots.
  * pendingCreate marks tasks created on-device that still need to reach the API;
- * pendingDone marks tasks completed on-device that still need to reach the API.
+ * pendingDone marks tasks completed on-device that still need to reach the API;
+ * pendingUpdate marks schedule edits that still need to reach the API.
+ *
+ * A recurring task is an ordinary occurrence carrying its rule: recurEveryN
+ * null means not recurring; recurUnit is "days" or "weeks"; recurDaysOfWeek is
+ * a bitmask (bit 0 = Monday .. bit 6 = Sunday) used only for weeks. Completing
+ * an occurrence spawns the next one as a new row sharing the seriesId.
  */
 @Entity(tableName = "open_tasks")
 data class OpenTaskEntity(
@@ -27,8 +33,13 @@ data class OpenTaskEntity(
     val repeatIntervalMinutes: Int,
     val firstWarningAtMillis: Long? = null,
     val nextFireAtMillis: Long,
+    val recurEveryN: Int? = null,
+    val recurUnit: String? = null,
+    val recurDaysOfWeek: Int? = null,
+    val seriesId: String? = null,
     val pendingDone: Boolean = false,
     val pendingCreate: Boolean = false,
+    val pendingUpdate: Boolean = false,
 )
 
 @Dao
@@ -51,6 +62,12 @@ interface OpenTaskDao {
     @Query("SELECT * FROM open_tasks WHERE pendingCreate = 1")
     suspend fun getPendingCreate(): List<OpenTaskEntity>
 
+    // Rows still pendingCreate are excluded: the PUT would 404 on a server that
+    // never saw the task. Creates are pushed (and the flag cleared) earlier in
+    // the same sync, so an edited fresh task gets its update through right after.
+    @Query("SELECT * FROM open_tasks WHERE pendingUpdate = 1 AND pendingCreate = 0 AND pendingDone = 0")
+    suspend fun getPendingUpdate(): List<OpenTaskEntity>
+
     @Upsert
     suspend fun upsert(task: OpenTaskEntity)
 
@@ -62,6 +79,9 @@ interface OpenTaskDao {
 
     @Query("UPDATE open_tasks SET pendingCreate = 0 WHERE id = :id")
     suspend fun clearPendingCreate(id: String)
+
+    @Query("UPDATE open_tasks SET pendingUpdate = 0 WHERE id = :id")
+    suspend fun clearPendingUpdate(id: String)
 
     @Query("DELETE FROM open_tasks WHERE id = :id")
     suspend fun delete(id: String)
@@ -80,7 +100,7 @@ interface OpenTaskDao {
 
 @Database(
     entities = [OpenTaskEntity::class, TitleHistoryEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class BadgerDb : RoomDatabase() {
@@ -98,6 +118,16 @@ abstract class BadgerDb : RoomDatabase() {
                         "`lastUsedAtMillis` INTEGER NOT NULL, " +
                         "PRIMARY KEY(`title`))",
                 )
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE open_tasks ADD COLUMN recurEveryN INTEGER")
+                db.execSQL("ALTER TABLE open_tasks ADD COLUMN recurUnit TEXT")
+                db.execSQL("ALTER TABLE open_tasks ADD COLUMN recurDaysOfWeek INTEGER")
+                db.execSQL("ALTER TABLE open_tasks ADD COLUMN seriesId TEXT")
+                db.execSQL("ALTER TABLE open_tasks ADD COLUMN pendingUpdate INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

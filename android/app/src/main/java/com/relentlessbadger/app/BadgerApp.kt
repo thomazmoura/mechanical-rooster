@@ -19,7 +19,7 @@ class AppContainer(context: Context) {
     private val db = Room.databaseBuilder(context, BadgerDb::class.java, "badger.db")
         // Local data is the source of truth (offline creates/completions live
         // only here until pushed), so upgrades must migrate, never wipe.
-        .addMigrations(BadgerDb.MIGRATION_2_3)
+        .addMigrations(BadgerDb.MIGRATION_2_3, BadgerDb.MIGRATION_3_4)
         .build()
     val taskDao = db.openTaskDao()
     val titleDao = db.titleHistoryDao()

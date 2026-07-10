@@ -96,6 +96,115 @@ public class ApiTests : IClassFixture<TestAppFactory>
     }
 
     [Fact]
+    public async Task Recurrence_round_trips_on_create_and_defaults_to_null()
+    {
+        var client = await LoginAsync(sub: "recurrence-sub");
+
+        var seriesId = Guid.NewGuid();
+        var recurring = await (await client.PostAsJsonAsync("/tasks",
+                new CreateTaskRequest("water plants",
+                    new DateTime(2026, 7, 13, 9, 0, 0, DateTimeKind.Utc),
+                    RecurEveryN: 2, RecurUnit: "weeks", RecurDaysOfWeek: 0b0010001, SeriesId: seriesId)))
+            .Content.ReadFromJsonAsync<TaskDto>();
+        Assert.Equal(2, recurring!.RecurEveryN);
+        Assert.Equal("weeks", recurring.RecurUnit);
+        Assert.Equal(0b0010001, recurring.RecurDaysOfWeek);
+        Assert.Equal(seriesId, recurring.SeriesId);
+
+        var listed = await client.GetFromJsonAsync<List<TaskDto>>("/tasks?status=open");
+        var fetched = Assert.Single(listed!, t => t.Id == recurring.Id);
+        Assert.Equal(2, fetched.RecurEveryN);
+
+        var plain = await (await client.PostAsJsonAsync("/tasks", new CreateTaskRequest("one-off")))
+            .Content.ReadFromJsonAsync<TaskDto>();
+        Assert.Null(plain!.RecurEveryN);
+        Assert.Null(plain.RecurUnit);
+        Assert.Null(plain.RecurDaysOfWeek);
+        Assert.Null(plain.SeriesId);
+    }
+
+    [Fact]
+    public async Task Invalid_recurrence_is_rejected()
+    {
+        var client = await LoginAsync(sub: "invalid-recurrence-sub");
+
+        var invalidRequests = new[]
+        {
+            new CreateTaskRequest("t", RecurEveryN: 0, RecurUnit: "days"),
+            new CreateTaskRequest("t", RecurEveryN: 1, RecurUnit: "fortnights"),
+            new CreateTaskRequest("t", RecurEveryN: 1, RecurUnit: "weeks", RecurDaysOfWeek: 0),
+            new CreateTaskRequest("t", RecurEveryN: 1, RecurUnit: "weeks", RecurDaysOfWeek: 128),
+            new CreateTaskRequest("t", RecurEveryN: 1, RecurUnit: "days", RecurDaysOfWeek: 1),
+            new CreateTaskRequest("t", RecurEveryN: 1),
+            new CreateTaskRequest("t", RecurUnit: "days"),
+        };
+        foreach (var request in invalidRequests)
+        {
+            var response = await client.PostAsJsonAsync("/tasks", request);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task Schedule_update_round_trips()
+    {
+        var client = await LoginAsync(sub: "schedule-update-sub");
+        var task = await (await client.PostAsJsonAsync("/tasks", new CreateTaskRequest("tune me")))
+            .Content.ReadFromJsonAsync<TaskDto>();
+
+        var warningAt = new DateTime(2026, 8, 1, 7, 30, 0, DateTimeKind.Utc);
+        var updateResponse = await client.PutAsJsonAsync($"/tasks/{task!.Id}/schedule",
+            new UpdateTaskScheduleRequest(warningAt, 45, 1, "days", null, task.Id));
+        updateResponse.EnsureSuccessStatusCode();
+        var updated = await updateResponse.Content.ReadFromJsonAsync<TaskDto>();
+        Assert.Equal(warningAt, updated!.FirstWarningAt!.Value.ToUniversalTime());
+        Assert.Equal(45, updated.RepeatIntervalMinutes);
+        Assert.Equal(1, updated.RecurEveryN);
+        Assert.Equal("days", updated.RecurUnit);
+        Assert.Equal(task.Id, updated.SeriesId);
+
+        var cleared = await (await client.PutAsJsonAsync($"/tasks/{task.Id}/schedule",
+                new UpdateTaskScheduleRequest(null, 15, null, null, null, null)))
+            .Content.ReadFromJsonAsync<TaskDto>();
+        Assert.Null(cleared!.FirstWarningAt);
+        Assert.Equal(15, cleared.RepeatIntervalMinutes);
+        Assert.Null(cleared.RecurEveryN);
+        Assert.Null(cleared.SeriesId);
+    }
+
+    [Fact]
+    public async Task Invalid_schedule_update_is_rejected()
+    {
+        var client = await LoginAsync(sub: "invalid-schedule-sub");
+        var task = await (await client.PostAsJsonAsync("/tasks", new CreateTaskRequest("guarded")))
+            .Content.ReadFromJsonAsync<TaskDto>();
+
+        var badInterval = await client.PutAsJsonAsync($"/tasks/{task!.Id}/schedule",
+            new UpdateTaskScheduleRequest(null, 0, null, null, null, null));
+        Assert.Equal(HttpStatusCode.BadRequest, badInterval.StatusCode);
+
+        var badRecurrence = await client.PutAsJsonAsync($"/tasks/{task.Id}/schedule",
+            new UpdateTaskScheduleRequest(null, 15, 1, "weeks", 0, null));
+        Assert.Equal(HttpStatusCode.BadRequest, badRecurrence.StatusCode);
+    }
+
+    [Fact]
+    public async Task Schedule_update_unknown_or_foreign_task_is_not_found()
+    {
+        var alice = await LoginAsync(sub: "schedule-alice", email: "alice@example.com");
+        var bob = await LoginAsync(sub: "schedule-bob", email: "bob@example.com");
+
+        var request = new UpdateTaskScheduleRequest(null, 15, null, null, null, null);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await alice.PutAsJsonAsync($"/tasks/{Guid.NewGuid()}/schedule", request)).StatusCode);
+
+        var aliceTask = await (await alice.PostAsJsonAsync("/tasks", new CreateTaskRequest("alice task")))
+            .Content.ReadFromJsonAsync<TaskDto>();
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await bob.PutAsJsonAsync($"/tasks/{aliceTask!.Id}/schedule", request)).StatusCode);
+    }
+
+    [Fact]
     public async Task Client_supplied_id_created_at_and_delays_are_honored()
     {
         var client = await LoginAsync(sub: "client-id-sub");

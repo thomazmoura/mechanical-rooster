@@ -36,6 +36,11 @@ public static class TaskEndpoints
                 return Results.BadRequest(new { error = "Title is required." });
             }
 
+            if (ValidateRecurrence(request.RecurEveryN, request.RecurUnit, request.RecurDaysOfWeek) is { } recurrenceError)
+            {
+                return Results.BadRequest(new { error = recurrenceError });
+            }
+
             var user = await principal.GetUserAsync(db);
             if (user is null)
             {
@@ -63,11 +68,45 @@ public static class TaskEndpoints
                 InitialDelayMinutes = Math.Max(1, request.InitialDelayMinutes ?? user.InitialDelayMinutes),
                 RepeatIntervalMinutes = Math.Max(1, request.RepeatIntervalMinutes ?? user.RepeatIntervalMinutes),
                 FirstWarningAt = request.FirstWarningAt?.ToUniversalTime(),
+                RecurEveryN = request.RecurEveryN,
+                RecurUnit = request.RecurUnit,
+                RecurDaysOfWeek = request.RecurDaysOfWeek,
+                SeriesId = request.SeriesId,
             };
             db.Tasks.Add(task);
             await db.SaveChangesAsync();
 
             return Results.Created($"/tasks/{task.Id}", TaskDto.From(task));
+        });
+
+        group.MapPut("/{id:guid}/schedule", async (
+            Guid id, UpdateTaskScheduleRequest request, ClaimsPrincipal principal, AppDbContext db) =>
+        {
+            if (request.RepeatIntervalMinutes < 1)
+            {
+                return Results.BadRequest(new { error = "RepeatIntervalMinutes must be at least 1." });
+            }
+
+            if (ValidateRecurrence(request.RecurEveryN, request.RecurUnit, request.RecurDaysOfWeek) is { } recurrenceError)
+            {
+                return Results.BadRequest(new { error = recurrenceError });
+            }
+
+            var userId = principal.GetUserId();
+            var task = await db.Tasks.SingleOrDefaultAsync(t => t.Id == id && t.UserId == userId);
+            if (task is null)
+            {
+                return Results.NotFound();
+            }
+
+            task.FirstWarningAt = request.FirstWarningAt?.ToUniversalTime();
+            task.RepeatIntervalMinutes = request.RepeatIntervalMinutes;
+            task.RecurEveryN = request.RecurEveryN;
+            task.RecurUnit = request.RecurUnit;
+            task.RecurDaysOfWeek = request.RecurDaysOfWeek;
+            task.SeriesId = request.SeriesId;
+            await db.SaveChangesAsync();
+            return Results.Ok(TaskDto.From(task));
         });
 
         group.MapPost("/{id:guid}/complete", async (Guid id, ClaimsPrincipal principal, AppDbContext db) =>
@@ -109,5 +148,28 @@ public static class TaskEndpoints
                 .ToListAsync();
             return Results.Ok(titles);
         });
+    }
+
+    // The client interprets the rule; the server only guards structural sanity.
+    private static string? ValidateRecurrence(int? everyN, string? unit, int? daysOfWeek)
+    {
+        if (everyN is null)
+        {
+            return unit is null && daysOfWeek is null
+                ? null
+                : "RecurUnit and RecurDaysOfWeek require RecurEveryN.";
+        }
+
+        if (everyN < 1)
+        {
+            return "RecurEveryN must be at least 1.";
+        }
+
+        return unit switch
+        {
+            "days" => daysOfWeek is null ? null : "RecurDaysOfWeek only applies to weekly recurrence.",
+            "weeks" => daysOfWeek is >= 1 and <= 127 ? null : "RecurDaysOfWeek must be a bitmask between 1 and 127.",
+            _ => "RecurUnit must be \"days\" or \"weeks\".",
+        };
     }
 }
