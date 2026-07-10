@@ -27,16 +27,8 @@ class BootReceiver : BroadcastReceiver() {
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val now = System.currentTimeMillis()
-                for (task in container.taskDao.getActive()) {
-                    val next = if (task.nextFireAtMillis <= now) {
-                        task.copy(nextFireAtMillis = now + 60_000L)
-                    } else {
-                        task
-                    }
-                    container.taskDao.upsert(next)
-                    container.scheduler.schedule(next)
-                }
+                container.repository.reArmAlarms()
+                container.syncScheduler.requestSync()
             } finally {
                 result.finish()
             }

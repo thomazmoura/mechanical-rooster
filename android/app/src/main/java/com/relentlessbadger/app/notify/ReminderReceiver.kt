@@ -22,19 +22,7 @@ class ReminderReceiver : BroadcastReceiver() {
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val task = container.taskDao.getById(taskId) ?: return@launch
-                if (task.pendingDone) return@launch
-
-                val session = container.session.current()
-                Notifications.showReminder(
-                    context, task, session.mediumWaitMinutes, session.longWaitMinutes,
-                )
-
-                val next = task.copy(
-                    nextFireAtMillis = System.currentTimeMillis() + task.repeatIntervalMinutes * 60_000L,
-                )
-                container.taskDao.upsert(next)
-                container.scheduler.schedule(next)
+                container.repository.onReminderFired(taskId)
             } finally {
                 result.finish()
             }

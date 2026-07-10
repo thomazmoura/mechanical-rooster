@@ -22,7 +22,17 @@ data class LoginResponse(
 )
 
 @Serializable
-data class CreateTaskRequest(val title: String, val firstWarningAt: String? = null)
+data class CreateTaskRequest(
+    val title: String,
+    val firstWarningAt: String? = null,
+    // Set when pushing an offline-created task: the client-minted id makes the
+    // push idempotent, the rest preserves the original creation time and the
+    // settings snapshot the task was created under.
+    val id: String? = null,
+    val createdAt: String? = null,
+    val initialDelayMinutes: Int? = null,
+    val repeatIntervalMinutes: Int? = null,
+)
 
 @Serializable
 data class TaskDto(

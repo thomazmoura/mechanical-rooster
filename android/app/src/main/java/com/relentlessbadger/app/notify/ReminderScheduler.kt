@@ -7,15 +7,31 @@ import android.content.Intent
 import android.os.Build
 import com.relentlessbadger.app.db.OpenTaskEntity
 
-class ReminderScheduler(private val context: Context) {
+/**
+ * Everything the business logic needs from the platform's alarm/notification
+ * machinery, behind an interface so scenario tests can record instead of
+ * touching AlarmManager.
+ */
+interface ReminderScheduler {
+    fun canScheduleExact(): Boolean
+    fun schedule(task: OpenTaskEntity)
+    fun cancel(taskId: String)
+
+    /** Clears the currently shown reminder without touching the scheduled alarm. */
+    fun dismissNotification(taskId: String)
+
+    fun showReminder(task: OpenTaskEntity, mediumWaitMinutes: Int, longWaitMinutes: Int)
+}
+
+class AlarmReminderScheduler(private val context: Context) : ReminderScheduler {
 
     private val alarmManager: AlarmManager
         get() = context.getSystemService(AlarmManager::class.java)
 
-    fun canScheduleExact(): Boolean =
+    override fun canScheduleExact(): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
 
-    fun schedule(task: OpenTaskEntity) {
+    override fun schedule(task: OpenTaskEntity) {
         val pendingIntent = reminderIntent(task.id)
         if (canScheduleExact()) {
             alarmManager.setExactAndAllowWhileIdle(
@@ -28,14 +44,17 @@ class ReminderScheduler(private val context: Context) {
         }
     }
 
-    fun cancel(taskId: String) {
+    override fun cancel(taskId: String) {
         alarmManager.cancel(reminderIntent(taskId))
         Notifications.cancel(context, taskId)
     }
 
-    /** Clears the currently shown reminder without touching the scheduled alarm. */
-    fun dismissNotification(taskId: String) {
+    override fun dismissNotification(taskId: String) {
         Notifications.cancel(context, taskId)
+    }
+
+    override fun showReminder(task: OpenTaskEntity, mediumWaitMinutes: Int, longWaitMinutes: Int) {
+        Notifications.showReminder(context, task, mediumWaitMinutes, longWaitMinutes)
     }
 
     private fun reminderIntent(taskId: String): PendingIntent =

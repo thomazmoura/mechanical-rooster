@@ -95,7 +95,7 @@ fun MainScreen(
             TopAppBar(
                 title = { Text("RelentlessBadger") },
                 actions = {
-                    IconButton(onClick = { viewModel.refresh() }) {
+                    IconButton(onClick = { viewModel.refresh(interactive = true) }) {
                         Icon(Icons.Filled.Refresh, contentDescription = "Sync")
                     }
                     IconButton(onClick = onOpenSettings) {

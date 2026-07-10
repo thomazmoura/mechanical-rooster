@@ -7,20 +7,25 @@ import com.relentlessbadger.app.data.ApiClient
 import com.relentlessbadger.app.data.SessionStore
 import com.relentlessbadger.app.data.TaskRepository
 import com.relentlessbadger.app.db.BadgerDb
+import com.relentlessbadger.app.notify.AlarmReminderScheduler
 import com.relentlessbadger.app.notify.Notifications
 import com.relentlessbadger.app.notify.ReminderScheduler
+import com.relentlessbadger.app.sync.SyncScheduler
 import kotlinx.coroutines.runBlocking
 
 class AppContainer(context: Context) {
     val session = SessionStore(context)
     val apiClient = ApiClient(session)
     private val db = Room.databaseBuilder(context, BadgerDb::class.java, "badger.db")
-        // open_tasks is a disposable cache rebuilt by sync(); safe to wipe on upgrade.
-        .fallbackToDestructiveMigration()
+        // Local data is the source of truth (offline creates/completions live
+        // only here until pushed), so upgrades must migrate, never wipe.
+        .addMigrations(BadgerDb.MIGRATION_2_3)
         .build()
     val taskDao = db.openTaskDao()
-    val scheduler = ReminderScheduler(context)
-    val repository = TaskRepository(apiClient, taskDao, scheduler)
+    val titleDao = db.titleHistoryDao()
+    val scheduler: ReminderScheduler = AlarmReminderScheduler(context)
+    val syncScheduler: SyncScheduler = SyncScheduler { }
+    val repository = TaskRepository(apiClient, taskDao, titleDao, scheduler, session, syncScheduler)
 }
 
 class BadgerApp : Application() {

@@ -71,14 +71,21 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    fun refresh() {
+    /**
+     * Syncs with the backend. Being offline is normal now, so connectivity
+     * errors are only surfaced when the user explicitly asked ([interactive]);
+     * everything else (e.g. a rejected session) is always shown.
+     */
+    fun refresh(interactive: Boolean = false) {
         viewModelScope.launch {
             try {
                 container.repository.sync()
-                titleHistory = container.repository.titles()
             } catch (e: Exception) {
-                errorMessage = e.friendly()
+                if (interactive || e !is java.io.IOException) {
+                    errorMessage = e.friendly()
+                }
             }
+            titleHistory = container.repository.titles()
         }
     }
 
@@ -114,10 +121,9 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         onDone: () -> Unit,
     ) {
         launchBusy {
-            val saved = container.repository.updateSettings(
+            container.repository.updateSettings(
                 SettingsDto(initialDelayMinutes, repeatIntervalMinutes, mediumWaitMinutes, longWaitMinutes),
             )
-            container.session.saveSettings(saved)
             onDone()
         }
     }

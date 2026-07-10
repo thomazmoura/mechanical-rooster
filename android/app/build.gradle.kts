@@ -42,6 +42,11 @@ android {
     }
 }
 
+ksp {
+    // Version the Room schema so migrations stay verifiable.
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

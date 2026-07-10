@@ -1,6 +1,7 @@
 package com.relentlessbadger.app.data
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -23,7 +24,20 @@ data class Session(
     val isSignedIn: Boolean get() = token != null && baseUrl.isNotBlank()
 }
 
-class SessionStore(private val context: Context) {
+/**
+ * The slice of session state the business logic needs: the current settings
+ * snapshot and the "settings edited locally, not yet pushed" flag. Fakeable
+ * in scenario tests without dragging DataStore in.
+ */
+interface SettingsStore {
+    suspend fun current(): Session
+    suspend fun saveSettings(settings: SettingsDto)
+    suspend fun markSettingsDirty()
+    suspend fun clearSettingsDirty()
+    suspend fun isSettingsDirty(): Boolean
+}
+
+class SessionStore(private val context: Context) : SettingsStore {
 
     private object Keys {
         val BASE_URL = stringPreferencesKey("base_url")
@@ -33,6 +47,7 @@ class SessionStore(private val context: Context) {
         val REPEAT_INTERVAL = intPreferencesKey("repeat_interval_minutes")
         val MEDIUM_WAIT = intPreferencesKey("medium_wait_minutes")
         val LONG_WAIT = intPreferencesKey("long_wait_minutes")
+        val SETTINGS_DIRTY = booleanPreferencesKey("settings_dirty")
     }
 
     // Mirrors kept warm for the OkHttp auth interceptor, which cannot suspend.
@@ -56,7 +71,7 @@ class SessionStore(private val context: Context) {
         }
     }
 
-    suspend fun current(): Session = sessionFlow.first()
+    override suspend fun current(): Session = sessionFlow.first()
 
     suspend fun saveBaseUrl(baseUrl: String) {
         context.dataStore.edit { it[Keys.BASE_URL] = baseUrl.trim().trimEnd('/') }
@@ -74,7 +89,7 @@ class SessionStore(private val context: Context) {
         cachedToken = token
     }
 
-    suspend fun saveSettings(settings: SettingsDto) {
+    override suspend fun saveSettings(settings: SettingsDto) {
         context.dataStore.edit {
             it[Keys.INITIAL_DELAY] = settings.initialDelayMinutes
             it[Keys.REPEAT_INTERVAL] = settings.repeatIntervalMinutes
@@ -82,6 +97,17 @@ class SessionStore(private val context: Context) {
             it[Keys.LONG_WAIT] = settings.longWaitMinutes
         }
     }
+
+    override suspend fun markSettingsDirty() {
+        context.dataStore.edit { it[Keys.SETTINGS_DIRTY] = true }
+    }
+
+    override suspend fun clearSettingsDirty() {
+        context.dataStore.edit { it[Keys.SETTINGS_DIRTY] = false }
+    }
+
+    override suspend fun isSettingsDirty(): Boolean =
+        context.dataStore.data.first()[Keys.SETTINGS_DIRTY] ?: false
 
     suspend fun clear() {
         context.dataStore.edit { it.clear() }
