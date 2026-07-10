@@ -17,7 +17,7 @@ import java.util.UUID
  * asks the [SyncScheduler] for a push — so the app is fully usable offline.
  */
 class TaskRepository(
-    private val apiClient: ApiClient,
+    private val apiClient: ApiProvider,
     private val dao: OpenTaskDao,
     private val titleDao: TitleHistoryDao,
     private val scheduler: ReminderScheduler,

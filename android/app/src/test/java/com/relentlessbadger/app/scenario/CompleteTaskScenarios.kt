@@ -1,0 +1,92 @@
+package com.relentlessbadger.app.scenario
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class CompleteTaskScenarios : ScenarioTest() {
+
+    @Test
+    fun `disabling a task online hides it, cancels its alarm and pushes the completion`() = scenario {
+        val task = givenSyncedTask("water plants")
+
+        whenTaskCompleted(task.id)
+
+        thenTaskGone("water plants")
+        assertTrue(alarms.cancelled.contains(task.id))
+
+        whenSyncRuns()
+
+        assertEquals(listOf(task.id), server.receivedCompletions)
+        thenServerDoesNotHaveOpenTask("water plants")
+        assertNull("row removed once acknowledged", taskDao.getById(task.id))
+    }
+
+    @Test
+    fun `disabling a task offline takes effect immediately and is pushed when connectivity returns`() = scenario {
+        val task = givenSyncedTask("water plants")
+        givenOffline()
+
+        whenTaskCompleted(task.id)
+
+        thenTaskGone("water plants")
+        assertTrue(alarms.cancelled.contains(task.id))
+        assertTrue(server.receivedCompletions.isEmpty())
+
+        givenOnline()
+        whenSyncRuns()
+
+        assertEquals(listOf(task.id), server.receivedCompletions)
+        thenServerDoesNotHaveOpenTask("water plants")
+    }
+
+    @Test
+    fun `a completion the server no longer knows about is dropped instead of retried forever`() = scenario {
+        val task = givenSyncedTask("water plants")
+        server.tasks.remove(task.id) // deleted from another device
+
+        whenTaskCompleted(task.id)
+        whenSyncRuns()
+
+        assertNull("row removed after the 404", taskDao.getById(task.id))
+        whenSyncRuns()
+        assertTrue("no completion retries", server.receivedCompletions.isEmpty())
+    }
+
+    @Test
+    fun `a completion that fails on a dead network stays queued and a later sync flushes it`() = scenario {
+        val task = givenSyncedTask("water plants")
+
+        whenTaskCompleted(task.id)
+        givenOffline()
+        whenSyncFailsWith { it is java.net.ConnectException }
+
+        assertTrue("still queued", localTask(task.id).pendingDone)
+
+        givenOnline()
+        whenSyncRuns()
+
+        assertEquals(listOf(task.id), server.receivedCompletions)
+        assertNull(taskDao.getById(task.id))
+    }
+
+    @Test
+    fun `a task created and completed entirely offline reaches the server as a completed task`() = scenario {
+        givenOffline()
+
+        val task = whenTaskCreated("water plants")
+        whenTaskCompleted(task.id)
+        thenTaskGone("water plants")
+
+        givenOnline()
+        whenSyncRuns()
+
+        assertEquals("create pushed before the completion", task.id, server.receivedCreates.single().id)
+        assertEquals(listOf(task.id), server.receivedCompletions)
+        assertTrue(
+            "server has the task, completed",
+            server.tasks[task.id]?.completedAt != null,
+        )
+    }
+}

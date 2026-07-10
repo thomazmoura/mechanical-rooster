@@ -7,7 +7,12 @@ import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.util.concurrent.TimeUnit
 
-class ApiClient(private val session: SessionStore) {
+/** Hands out the API implementation; fakeable in scenario tests. */
+fun interface ApiProvider {
+    suspend fun api(): BadgerApi
+}
+
+class ApiClient(private val session: SessionStore) : ApiProvider {
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -33,7 +38,7 @@ class ApiClient(private val session: SessionStore) {
 
     @Volatile private var cached: Pair<String, BadgerApi>? = null
 
-    suspend fun api(): BadgerApi {
+    override suspend fun api(): BadgerApi {
         val baseUrl = session.current().baseUrl.trimEnd('/') + "/"
         cached?.let { (url, api) -> if (url == baseUrl) return api }
         val api = Retrofit.Builder()
