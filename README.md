@@ -15,7 +15,9 @@ Each task snapshots two user-configurable defaults at creation time (Settings sc
 1. **First reminder after** N minutes (default 60)
 2. **Then nag every** M minutes (default 15) — repeats until the task is completed
 
-The server is the source of truth for tasks and settings; the app mirrors open tasks into a local Room database and drives all notifications from exact alarms, so the phone doesn't need to reach the server for reminders to fire. Tapping **Done** on the notification (or in the list) stops the nagging immediately and syncs the completion to the API (retried later if you're offline).
+The app is **offline-first**: the local Room database is the source of truth, and every feature — creating tasks, marking them done, snoozing, editing settings, title autocomplete — works with no connection. Notifications are driven by local exact alarms, so reminders fire and repeat offline and across reboots.
+
+The backend's only job is keeping devices in sync. Every local change is flagged (`pendingCreate` / `pendingDone` / dirty settings) and pushed by a WorkManager job that runs the moment connectivity is available, plus a 6-hour periodic pull as a safety net. Task ids are minted on the device, so pushing a create twice (e.g. after a lost response) can't duplicate the task. Tapping **Done** on the notification (or in the list) stops the nagging immediately, wherever you are; the server hears about it whenever the network comes back.
 
 ## Quick start (one command)
 
@@ -144,7 +146,7 @@ Then on the Pi set `API_IMAGE=ghcr.io/<you>/relentlessbadger-api` in `.env` and 
 | POST | `/auth/google` | exchange a Google ID token for an app JWT |
 | GET/PUT | `/me/settings` | default initial delay + repeat interval |
 | GET | `/tasks?status=open\|done\|all` | list tasks |
-| POST | `/tasks` | create a task `{"title": "..."}` |
+| POST | `/tasks` | create a task `{"title": "..."}`; accepts an optional client-minted `id` (idempotent), `createdAt` and delay overrides so offline creates push faithfully |
 | POST | `/tasks/{id}/complete` | mark done |
 | DELETE | `/tasks/{id}` | delete |
 | GET | `/tasks/titles` | distinct past titles (frequency-ordered) feeding the fuzzy autocomplete |
@@ -153,8 +155,10 @@ Then on the Pi set `API_IMAGE=ghcr.io/<you>/relentlessbadger-api` in `.env` and 
 
 ```bash
 cd backend && dotnet test        # API integration tests (in-memory SQLite, fake Google validator)
-cd android && ./gradlew test     # fuzzy-matcher + reminder-scheduling unit tests
+cd android && ./gradlew test     # BDD scenario suite + unit tests (JVM/Robolectric, no emulator)
 ```
+
+The Android suite is scenario-driven (`app/src/test/.../scenario/`): Given/When/Then tests run the real repository on an in-memory Room database with the network, clock and alarms faked, covering every feature online and offline — create/disable while offline, queue flush on reconnect, sync merge and prune safety, settings last-write-wins, boot re-arm, 401 recovery, and the Room migration.
 
 ## Repo layout
 
@@ -167,9 +171,10 @@ cd android && ./gradlew test     # fuzzy-matcher + reminder-scheduling unit test
 │   └── RelentlessBadger.Api.Tests/
 └── android/
     └── app/src/main/java/com/relentlessbadger/app/
-        ├── data/                 # Retrofit client, DataStore session, repository
-        ├── db/                   # Room cache of open tasks (drives alarms)
+        ├── data/                 # Retrofit client, DataStore session, offline-first repository
+        ├── db/                   # Room source of truth: open tasks (drives alarms) + title history
         ├── fuzzy/                # fzf-style matcher for quick-add suggestions
         ├── notify/               # AlarmManager scheduling, receivers, notifications
+        ├── sync/                 # WorkManager background sync (pushes queued changes on reconnect)
         └── ui/                   # Compose Material 3 screens
 ```
