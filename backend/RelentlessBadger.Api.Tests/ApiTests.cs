@@ -96,6 +96,57 @@ public class ApiTests : IClassFixture<TestAppFactory>
     }
 
     [Fact]
+    public async Task Client_supplied_id_created_at_and_delays_are_honored()
+    {
+        var client = await LoginAsync(sub: "client-id-sub");
+
+        var id = Guid.NewGuid();
+        var createdAt = new DateTime(2026, 7, 1, 8, 30, 0, DateTimeKind.Utc);
+        var response = await client.PostAsJsonAsync("/tasks",
+            new CreateTaskRequest("offline task", null, id, createdAt, 30, 5));
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var task = await response.Content.ReadFromJsonAsync<TaskDto>();
+        Assert.Equal(id, task!.Id);
+        Assert.Equal(createdAt, task.CreatedAt.ToUniversalTime());
+        Assert.Equal(30, task.InitialDelayMinutes);
+        Assert.Equal(5, task.RepeatIntervalMinutes);
+    }
+
+    [Fact]
+    public async Task Create_with_same_id_is_idempotent()
+    {
+        var client = await LoginAsync(sub: "idempotent-sub");
+
+        var id = Guid.NewGuid();
+        var request = new CreateTaskRequest("pushed twice", null, id);
+        var first = await client.PostAsJsonAsync("/tasks", request);
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+
+        var retry = await client.PostAsJsonAsync("/tasks", request);
+        Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
+        var task = await retry.Content.ReadFromJsonAsync<TaskDto>();
+        Assert.Equal(id, task!.Id);
+
+        var all = await client.GetFromJsonAsync<List<TaskDto>>("/tasks?status=all");
+        Assert.Single(all!, t => t.Id == id);
+    }
+
+    [Fact]
+    public async Task Create_with_id_owned_by_another_user_conflicts()
+    {
+        var alice = await LoginAsync(sub: "conflict-alice", email: "alice@example.com");
+        var bob = await LoginAsync(sub: "conflict-bob", email: "bob@example.com");
+
+        var id = Guid.NewGuid();
+        (await alice.PostAsJsonAsync("/tasks", new CreateTaskRequest("alice task", null, id)))
+            .EnsureSuccessStatusCode();
+
+        var response = await bob.PostAsJsonAsync("/tasks", new CreateTaskRequest("bob task", null, id));
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Empty_title_is_rejected()
     {
         var client = await LoginAsync(sub: "empty-title-sub");

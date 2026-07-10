@@ -42,14 +42,26 @@ public static class TaskEndpoints
                 return Results.Unauthorized();
             }
 
+            if (request.Id is { } id)
+            {
+                var existing = await db.Tasks.SingleOrDefaultAsync(t => t.Id == id);
+                if (existing is not null)
+                {
+                    // Idempotent retry from a client re-pushing an offline create.
+                    return existing.UserId == user.Id
+                        ? Results.Ok(TaskDto.From(existing))
+                        : Results.Conflict(new { error = "Id already in use." });
+                }
+            }
+
             var task = new TaskItem
             {
-                Id = Guid.NewGuid(),
+                Id = request.Id ?? Guid.NewGuid(),
                 UserId = user.Id,
                 Title = title,
-                CreatedAt = DateTime.UtcNow,
-                InitialDelayMinutes = user.InitialDelayMinutes,
-                RepeatIntervalMinutes = user.RepeatIntervalMinutes,
+                CreatedAt = request.CreatedAt?.ToUniversalTime() ?? DateTime.UtcNow,
+                InitialDelayMinutes = Math.Max(1, request.InitialDelayMinutes ?? user.InitialDelayMinutes),
+                RepeatIntervalMinutes = Math.Max(1, request.RepeatIntervalMinutes ?? user.RepeatIntervalMinutes),
                 FirstWarningAt = request.FirstWarningAt?.ToUniversalTime(),
             };
             db.Tasks.Add(task);

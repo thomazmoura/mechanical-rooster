@@ -16,7 +16,16 @@ public record SettingsDto(
         new(user.InitialDelayMinutes, user.RepeatIntervalMinutes, user.MediumWaitMinutes, user.LongWaitMinutes);
 }
 
-public record CreateTaskRequest(string Title, DateTime? FirstWarningAt = null);
+// Id/CreatedAt/delay overrides let an offline-first client push a task it
+// already created locally: the id makes retries idempotent, the rest preserves
+// the creation time and settings snapshot the task was actually created under.
+public record CreateTaskRequest(
+    string Title,
+    DateTime? FirstWarningAt = null,
+    Guid? Id = null,
+    DateTime? CreatedAt = null,
+    int? InitialDelayMinutes = null,
+    int? RepeatIntervalMinutes = null);
 
 public record TaskDto(
     Guid Id,
