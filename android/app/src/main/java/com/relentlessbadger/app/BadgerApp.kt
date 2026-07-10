@@ -10,7 +10,7 @@ import com.relentlessbadger.app.db.BadgerDb
 import com.relentlessbadger.app.notify.AlarmReminderScheduler
 import com.relentlessbadger.app.notify.Notifications
 import com.relentlessbadger.app.notify.ReminderScheduler
-import com.relentlessbadger.app.sync.SyncScheduler
+import com.relentlessbadger.app.sync.WorkManagerSyncScheduler
 import kotlinx.coroutines.runBlocking
 
 class AppContainer(context: Context) {
@@ -24,7 +24,7 @@ class AppContainer(context: Context) {
     val taskDao = db.openTaskDao()
     val titleDao = db.titleHistoryDao()
     val scheduler: ReminderScheduler = AlarmReminderScheduler(context)
-    val syncScheduler: SyncScheduler = SyncScheduler { }
+    val syncScheduler = WorkManagerSyncScheduler(context)
     val repository = TaskRepository(apiClient, taskDao, titleDao, scheduler, session, syncScheduler)
 }
 
@@ -37,6 +37,12 @@ class BadgerApp : Application() {
         container = AppContainer(this)
         Notifications.ensureChannel(this)
         // Warm the token/baseUrl mirrors before any receiver touches the API.
-        runBlocking { container.session.current() }
+        val session = runBlocking { container.session.current() }
+        if (session.isSignedIn) {
+            // Flush anything queued while the app was dead and keep a
+            // periodic pull armed.
+            container.syncScheduler.requestSync()
+            container.syncScheduler.ensurePeriodic()
+        }
     }
 }
