@@ -1,4 +1,4 @@
-# MechanicalRooster 🐓
+# RelentlessBadger 🐓
 
 A persistent-reminder to-do app: tasks are extremely fast to add, and the app **nags you with notifications until you mark them done**.
 
@@ -45,7 +45,7 @@ On Debian/Ubuntu, `./install-deps.sh` checks and installs all of the above (Post
 
 ```bash
 docker compose up -d                       # PostgreSQL 17 on :5432
-cd backend/MechanicalRooster.Api
+cd backend/RelentlessBadger.Api
 dotnet run                                 # http://0.0.0.0:5000, auto-applies migrations
 ```
 
@@ -69,16 +69,16 @@ The PoC only supports Google accounts. In [Google Cloud Console](https://console
 
 1. Create a project → **APIs & Services → OAuth consent screen**. Choose *External*, stay in **Testing** mode, and add your Gmail address as a test user.
 2. **Credentials → Create credentials → OAuth client ID**, twice:
-   - **Android** client: package name `com.mechanicalrooster.app`, SHA-1 from your debug keystore:
+   - **Android** client: package name `com.relentlessbadger.app`, SHA-1 from your debug keystore:
      ```bash
      keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android | grep SHA1
      ```
    - **Web application** client: no redirect URIs needed. **Its client ID is the one both sides use.**
 3. Put the **Web** client ID in two places:
-   - `backend/MechanicalRooster.Api/appsettings.json` → `Auth:GoogleClientId`
-   - `android/gradle.properties` → `ROOSTER_GOOGLE_WEB_CLIENT_ID`
+   - `backend/RelentlessBadger.Api/appsettings.json` → `Auth:GoogleClientId`
+   - `android/gradle.properties` → `BADGER_GOOGLE_WEB_CLIENT_ID`
 
-If `ROOSTER_GOOGLE_WEB_CLIENT_ID` is left empty, the app shows a **Dev sign-in** button instead of Google — handy for testing the whole flow before OAuth is configured (requires the server's dev bypass).
+If `BADGER_GOOGLE_WEB_CLIENT_ID` is left empty, the app shows a **Dev sign-in** button instead of Google — handy for testing the whole flow before OAuth is configured (requires the server's dev bypass).
 
 ## 3. Install the app on your phone
 
@@ -86,10 +86,10 @@ Build the APK with the server URL baked in (the app then connects without asking
 
 ```bash
 cd android
-./gradlew assembleDebug -PROOSTER_API_BASE_URL=http://<api-machine-ip>:5000
+./gradlew assembleDebug -PBADGER_API_BASE_URL=http://<api-machine-ip>:5000
 ```
 
-Leave the property out (or blank) and the sign-in screen shows the URL field instead. Instead of the `-P` flag you can also set `ROOSTER_API_BASE_URL` in `android/gradle.properties`, or export `ORG_GRADLE_PROJECT_ROOSTER_API_BASE_URL` (that's how CI/CD would inject the production URL).
+Leave the property out (or blank) and the sign-in screen shows the URL field instead. Instead of the `-P` flag you can also set `BADGER_API_BASE_URL` in `android/gradle.properties`, or export `ORG_GRADLE_PROJECT_BADGER_API_BASE_URL` (that's how CI/CD would inject the production URL).
 
 The APK lands at `android/app/build/outputs/apk/debug/app-debug.apk`. Get it onto the phone either way:
 
@@ -112,7 +112,7 @@ On first launch: sign in with Google (once — the session token lasts ~180 days
 `backend/Dockerfile` builds a container image of the API for both `amd64` and `arm64`, and `docker-compose.prod.yml` runs it together with PostgreSQL. On the Pi (or any Docker host):
 
 ```bash
-git clone <this-repo> && cd MechanicalRooster
+git clone <this-repo> && cd RelentlessBadger
 cp .env.example .env        # then fill in POSTGRES_PASSWORD, JWT_KEY, GOOGLE_CLIENT_ID
 docker compose -f docker-compose.prod.yml up -d --build
 curl http://localhost:5000/health
@@ -124,17 +124,17 @@ Alternatively, build the multi-arch image on a faster machine and push it to a r
 
 ```bash
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t ghcr.io/<you>/mechanicalrooster-api --push backend/
+  -t ghcr.io/<you>/relentlessbadger-api --push backend/
 ```
 
-Then on the Pi set `API_IMAGE=ghcr.io/<you>/mechanicalrooster-api` in `.env` and run `up -d` without `--build`. The same `buildx` command is what a CI/CD pipeline would run to publish the image.
+Then on the Pi set `API_IMAGE=ghcr.io/<you>/relentlessbadger-api` in `.env` and run `up -d` without `--build`. The same `buildx` command is what a CI/CD pipeline would run to publish the image.
 
 ## Configuration
 
 | Setting | Development | Production / CI |
 |---|---|---|
-| App: API base URL | `ROOSTER_API_BASE_URL` in `android/gradle.properties` (dev.sh bakes `http://localhost:5000` for the emulator) | `-PROOSTER_API_BASE_URL=...` or env `ORG_GRADLE_PROJECT_ROOSTER_API_BASE_URL` |
-| App: Google client ID | `ROOSTER_GOOGLE_WEB_CLIENT_ID` in `android/gradle.properties` | `-P` flag or env `ORG_GRADLE_PROJECT_ROOSTER_GOOGLE_WEB_CLIENT_ID` |
+| App: API base URL | `BADGER_API_BASE_URL` in `android/gradle.properties` (dev.sh bakes `http://localhost:5000` for the emulator) | `-PBADGER_API_BASE_URL=...` or env `ORG_GRADLE_PROJECT_BADGER_API_BASE_URL` |
+| App: Google client ID | `BADGER_GOOGLE_WEB_CLIENT_ID` in `android/gradle.properties` | `-P` flag or env `ORG_GRADLE_PROJECT_BADGER_GOOGLE_WEB_CLIENT_ID` |
 | API: any appsettings key | `appsettings.Development.json` | env vars with `__` as the separator (e.g. `Jwt__Key`, `ConnectionStrings__Default`) — see `docker-compose.prod.yml` / `.env.example` |
 
 ## API
@@ -163,10 +163,10 @@ cd android && ./gradlew test     # fuzzy-matcher + reminder-scheduling unit test
 ├── docker-compose.prod.yml       # prod: PostgreSQL + API containers (see .env.example)
 ├── backend/
 │   ├── Dockerfile                # multi-arch (amd64/arm64) API image
-│   ├── MechanicalRooster.Api/    # minimal-API endpoints, EF Core + Npgsql, JWT auth
-│   └── MechanicalRooster.Api.Tests/
+│   ├── RelentlessBadger.Api/    # minimal-API endpoints, EF Core + Npgsql, JWT auth
+│   └── RelentlessBadger.Api.Tests/
 └── android/
-    └── app/src/main/java/com/mechanicalrooster/app/
+    └── app/src/main/java/com/relentlessbadger/app/
         ├── data/                 # Retrofit client, DataStore session, repository
         ├── db/                   # Room cache of open tasks (drives alarms)
         ├── fuzzy/                # fzf-style matcher for quick-add suggestions

@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">MechanicalRooster</string>
+    <string name="app_name">Relentless Badger</string>
     <string name="notification_channel_name">Task reminders</string>
     <string name="notification_channel_description">Nagging reminders for open tasks</string>
-    <string name="notification_still_pending">still pending</string>
     <string name="notification_action_done">Done</string>
     <string name="notification_action_medium_wait">Medium wait</string>
     <string name="notification_action_long_wait">Long wait</string>

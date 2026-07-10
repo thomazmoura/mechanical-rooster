@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Check and install everything needed to build and run MechanicalRooster.
+# Check and install everything needed to build and run RelentlessBadger.
 #
 #   ./install-deps.sh
 #
@@ -175,7 +175,7 @@ fi
 if [[ -x "$SDK/emulator/emulator" ]] && [[ -z "$("$SDK/emulator/emulator" -list-avds 2>/dev/null)" ]]; then
   action "No AVD exists (dev.sh needs one) — create it in Android Studio's Device Manager, or:
        $SDKMANAGER --install 'system-images;android-35;google_apis;x86_64'
-       $SDK/cmdline-tools/latest/bin/avdmanager create avd -n rooster -k 'system-images;android-35;google_apis;x86_64'"
+       $SDK/cmdline-tools/latest/bin/avdmanager create avd -n badger -k 'system-images;android-35;google_apis;x86_64'"
 fi
 
 # --- Summary --------------------------------------------------------------------

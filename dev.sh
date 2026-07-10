@@ -11,7 +11,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN_DIR="$ROOT/.dev"
 API_PORT="${API_PORT:-5000}"
-APP_ID="com.mechanicalrooster.app"
+APP_ID="com.relentlessbadger.app"
 
 # --- Android SDK ------------------------------------------------------------
 SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
@@ -87,7 +87,7 @@ else
   # setsid: own process group so stop_api can kill watch + app together.
   # RESTART_ON_RUDE_EDIT: auto-restart on edits hot reload can't handle,
   # instead of prompting (the prompt would hang — output goes to a log file).
-  ( cd "$ROOT/backend/MechanicalRooster.Api" && \
+  ( cd "$ROOT/backend/RelentlessBadger.Api" && \
     DOTNET_WATCH_RESTART_ON_RUDE_EDIT=true \
     exec setsid dotnet watch run --non-interactive >"$RUN_DIR/api.log" 2>&1 ) &
   echo $! >"$RUN_DIR/api.pid"
@@ -97,7 +97,7 @@ fi
 log "Building the app (gradle assembleDebug)..."
 # Bake the URL in: adb reverse (step 7) makes localhost:$API_PORT reach the host API.
 ( cd "$ROOT/android" && ./gradlew --console=plain -q assembleDebug \
-    -PROOSTER_API_BASE_URL="http://localhost:$API_PORT" )
+    -PBADGER_API_BASE_URL="http://localhost:$API_PORT" )
 APK="$ROOT/android/app/build/outputs/apk/debug/app-debug.apk"
 
 # --- 5. Wait for the API ------------------------------------------------------

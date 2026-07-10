@@ -7,20 +7,20 @@ plugins {
 }
 
 android {
-    namespace = "com.mechanicalrooster.app"
+    namespace = "com.relentlessbadger.app"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.mechanicalrooster.app"
+        applicationId = "com.relentlessbadger.app"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
 
-        val webClientId = (project.findProperty("ROOSTER_GOOGLE_WEB_CLIENT_ID") as? String).orEmpty()
+        val webClientId = (project.findProperty("BADGER_GOOGLE_WEB_CLIENT_ID") as? String).orEmpty()
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$webClientId\"")
 
-        val apiBaseUrl = (project.findProperty("ROOSTER_API_BASE_URL") as? String).orEmpty()
+        val apiBaseUrl = (project.findProperty("BADGER_API_BASE_URL") as? String).orEmpty()
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
     }
 

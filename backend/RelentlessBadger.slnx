@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="RelentlessBadger.Api.Tests/RelentlessBadger.Api.Tests.csproj" />
+  <Project Path="RelentlessBadger.Api/RelentlessBadger.Api.csproj" />
+</Solution>

@@ -6,15 +6,15 @@
 services:
   postgres:
     image: postgres:17-alpine
-    container_name: mechanicalrooster-db
+    container_name: relentlessbadger-db
     environment:
-      POSTGRES_USER: rooster
+      POSTGRES_USER: badger
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it in .env}
-      POSTGRES_DB: mechanicalrooster
+      POSTGRES_DB: relentlessbadger
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U rooster -d mechanicalrooster"]
+      test: ["CMD-SHELL", "pg_isready -U badger -d relentlessbadger"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -22,11 +22,11 @@ services:
 
   api:
     build: ./backend
-    image: ${API_IMAGE:-mechanicalrooster-api}
-    container_name: mechanicalrooster-api
+    image: ${API_IMAGE:-relentlessbadger-api}
+    container_name: relentlessbadger-api
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      ConnectionStrings__Default: Host=postgres;Port=5432;Database=mechanicalrooster;Username=rooster;Password=${POSTGRES_PASSWORD}
+      ConnectionStrings__Default: Host=postgres;Port=5432;Database=relentlessbadger;Username=badger;Password=${POSTGRES_PASSWORD}
       Jwt__Key: ${JWT_KEY:?set it in .env}
       Auth__GoogleClientId: ${GOOGLE_CLIENT_ID:-}
     ports:
