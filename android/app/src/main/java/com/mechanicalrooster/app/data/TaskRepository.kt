@@ -15,8 +15,9 @@ class TaskRepository(
 
     fun openTasks(): Flow<List<OpenTaskEntity>> = dao.observeActive()
 
-    suspend fun addTask(title: String): OpenTaskEntity {
-        val dto = apiClient.api().createTask(CreateTaskRequest(title))
+    suspend fun addTask(title: String, firstWarningAtMillis: Long? = null): OpenTaskEntity {
+        val firstWarningAt = firstWarningAtMillis?.let { Instant.ofEpochMilli(it).toString() }
+        val dto = apiClient.api().createTask(CreateTaskRequest(title, firstWarningAt))
         val entity = dto.toEntity()
         dao.upsert(entity)
         scheduler.schedule(entity)
@@ -90,29 +91,34 @@ class TaskRepository(
 
 fun TaskDto.toEntity(): OpenTaskEntity {
     val createdAtMillis = Instant.parse(createdAt).toEpochMilli()
+    val firstWarningAtMillis = firstWarningAt?.let { Instant.parse(it).toEpochMilli() }
     return OpenTaskEntity(
         id = id,
         title = title,
         createdAtMillis = createdAtMillis,
         initialDelayMinutes = initialDelayMinutes,
         repeatIntervalMinutes = repeatIntervalMinutes,
+        firstWarningAtMillis = firstWarningAtMillis,
         nextFireAtMillis = computeNextFire(
-            createdAtMillis, initialDelayMinutes, repeatIntervalMinutes, System.currentTimeMillis(),
+            createdAtMillis, initialDelayMinutes, repeatIntervalMinutes,
+            System.currentTimeMillis(), firstWarningAtMillis,
         ),
     )
 }
 
 /**
- * First reminder fires initialDelay after creation; afterwards it repeats every
- * repeatInterval. Returns the earliest slot in the future.
+ * First reminder fires at [firstWarningAtMillis] when set, otherwise initialDelay
+ * after creation; afterwards it repeats every repeatInterval. Returns the earliest
+ * slot in the future.
  */
 fun computeNextFire(
     createdAtMillis: Long,
     initialDelayMinutes: Int,
     repeatIntervalMinutes: Int,
     nowMillis: Long,
+    firstWarningAtMillis: Long? = null,
 ): Long {
-    val first = createdAtMillis + initialDelayMinutes * 60_000L
+    val first = firstWarningAtMillis ?: (createdAtMillis + initialDelayMinutes * 60_000L)
     if (first > nowMillis) return first
     val interval = repeatIntervalMinutes * 60_000L
     val periodsElapsed = (nowMillis - first) / interval + 1

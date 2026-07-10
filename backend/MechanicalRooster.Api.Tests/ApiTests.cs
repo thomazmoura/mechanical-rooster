@@ -80,6 +80,22 @@ public class ApiTests : IClassFixture<TestAppFactory>
     }
 
     [Fact]
+    public async Task First_warning_time_round_trips_and_defaults_to_null()
+    {
+        var client = await LoginAsync(sub: "first-warning-sub");
+
+        var warningAt = new DateTime(2026, 7, 12, 9, 0, 0, DateTimeKind.Utc);
+        var scheduled = await (await client.PostAsJsonAsync("/tasks",
+                new CreateTaskRequest("scheduled task", warningAt)))
+            .Content.ReadFromJsonAsync<TaskDto>();
+        Assert.Equal(warningAt, scheduled!.FirstWarningAt!.Value.ToUniversalTime());
+
+        var plain = await (await client.PostAsJsonAsync("/tasks", new CreateTaskRequest("plain task")))
+            .Content.ReadFromJsonAsync<TaskDto>();
+        Assert.Null(plain!.FirstWarningAt);
+    }
+
+    [Fact]
     public async Task Empty_title_is_rejected()
     {
         var client = await LoginAsync(sub: "empty-title-sub");

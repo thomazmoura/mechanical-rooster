@@ -13,5 +13,9 @@ public class TaskItem
     public int InitialDelayMinutes { get; set; }
     public int RepeatIntervalMinutes { get; set; }
 
+    // When set, the first reminder fires at this absolute (UTC) time instead of
+    // CreatedAt + InitialDelayMinutes. Subsequent reminders still use the interval.
+    public DateTime? FirstWarningAt { get; set; }
+
     public User? User { get; set; }
 }

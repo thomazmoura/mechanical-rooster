@@ -31,6 +31,10 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     var quickAddText by mutableStateOf("")
+
+    /** Optional absolute time (epoch millis) for the next task's first reminder. */
+    var quickAddFirstWarningAtMillis by mutableStateOf<Long?>(null)
+
     var titleHistory by mutableStateOf<List<String>>(emptyList())
         private set
     val suggestions by derivedStateOf {
@@ -81,9 +85,11 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     fun addTask(title: String = quickAddText) {
         val trimmed = title.trim()
         if (trimmed.isEmpty()) return
+        val firstWarningAtMillis = quickAddFirstWarningAtMillis
         quickAddText = ""
+        quickAddFirstWarningAtMillis = null
         launchBusy {
-            container.repository.addTask(trimmed)
+            container.repository.addTask(trimmed, firstWarningAtMillis)
             titleHistory = container.repository.titles()
         }
     }

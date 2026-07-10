@@ -50,6 +50,7 @@ public static class TaskEndpoints
                 CreatedAt = DateTime.UtcNow,
                 InitialDelayMinutes = user.InitialDelayMinutes,
                 RepeatIntervalMinutes = user.RepeatIntervalMinutes,
+                FirstWarningAt = request.FirstWarningAt?.ToUniversalTime(),
             };
             db.Tasks.Add(task);
             await db.SaveChangesAsync();

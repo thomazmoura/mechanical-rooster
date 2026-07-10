@@ -17,11 +17,17 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Snooze
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -29,9 +35,13 @@ import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -50,6 +60,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mechanicalrooster.app.db.OpenTaskEntity
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -148,14 +162,33 @@ fun MainScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun QuickAdd(viewModel: AppViewModel) {
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showTimePicker by remember { mutableStateOf(false) }
+    var pickedDateMillis by remember { mutableStateOf<Long?>(null) }
+    val firstWarning = viewModel.quickAddFirstWarningAtMillis
+
     Column {
         OutlinedTextField(
             value = viewModel.quickAddText,
             onValueChange = { viewModel.quickAddText = it },
             placeholder = { Text("What needs doing right away?") },
             singleLine = true,
+            leadingIcon = {
+                IconButton(onClick = { showDatePicker = true }) {
+                    Icon(
+                        Icons.Filled.Schedule,
+                        contentDescription = "Set first reminder time",
+                        tint = if (firstWarning != null) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            LocalContentColor.current
+                        },
+                    )
+                }
+            },
             trailingIcon = {
                 FilledTonalIconButton(
                     onClick = { viewModel.addTask() },
@@ -168,6 +201,22 @@ private fun QuickAdd(viewModel: AppViewModel) {
                 .fillMaxWidth()
                 .padding(top = 8.dp),
         )
+
+        if (firstWarning != null) {
+            AssistChip(
+                onClick = { showDatePicker = true },
+                label = { Text("First nag ${formatDateTime(firstWarning)}") },
+                leadingIcon = { Icon(Icons.Filled.Schedule, contentDescription = null) },
+                trailingIcon = {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = "Clear first reminder time",
+                        modifier = Modifier.clickable { viewModel.quickAddFirstWarningAtMillis = null },
+                    )
+                },
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
 
         if (viewModel.suggestions.isNotEmpty()) {
             Card(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
@@ -198,7 +247,66 @@ private fun QuickAdd(viewModel: AppViewModel) {
             }
         }
     }
+
+    if (showDatePicker) {
+        val dateState = rememberDatePickerState(
+            initialSelectedDateMillis = firstWarning ?: System.currentTimeMillis(),
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    enabled = dateState.selectedDateMillis != null,
+                    onClick = {
+                        pickedDateMillis = dateState.selectedDateMillis
+                        showDatePicker = false
+                        showTimePicker = true
+                    },
+                ) { Text("Next") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+            },
+        ) {
+            DatePicker(state = dateState)
+        }
+    }
+
+    if (showTimePicker) {
+        val initial = firstWarning?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()) }
+        val timeState = rememberTimePickerState(
+            initialHour = initial?.hour ?: 9,
+            initialMinute = initial?.minute ?: 0,
+        )
+        AlertDialog(
+            onDismissRequest = { showTimePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    pickedDateMillis?.let { dateMillis ->
+                        // DatePicker returns UTC midnight for the chosen calendar day;
+                        // combine that date with the picked local time.
+                        val date = Instant.ofEpochMilli(dateMillis).atZone(ZoneOffset.UTC).toLocalDate()
+                        viewModel.quickAddFirstWarningAtMillis = date
+                            .atTime(timeState.hour, timeState.minute)
+                            .atZone(ZoneId.systemDefault())
+                            .toInstant()
+                            .toEpochMilli()
+                    }
+                    showTimePicker = false
+                }) { Text("Set") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTimePicker = false }) { Text("Cancel") }
+            },
+            text = { TimePicker(state = timeState) },
+        )
+    }
 }
+
+private val dateTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("MMM d, h:mm a")
+
+private fun formatDateTime(epochMillis: Long): String =
+    Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).format(dateTimeFormatter)
 
 @Composable
 private fun TaskRow(

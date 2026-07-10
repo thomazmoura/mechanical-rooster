@@ -14,7 +14,10 @@ import kotlinx.coroutines.runBlocking
 class AppContainer(context: Context) {
     val session = SessionStore(context)
     val apiClient = ApiClient(session)
-    private val db = Room.databaseBuilder(context, RoosterDb::class.java, "rooster.db").build()
+    private val db = Room.databaseBuilder(context, RoosterDb::class.java, "rooster.db")
+        // open_tasks is a disposable cache rebuilt by sync(); safe to wipe on upgrade.
+        .fallbackToDestructiveMigration()
+        .build()
     val taskDao = db.openTaskDao()
     val scheduler = ReminderScheduler(context)
     val repository = TaskRepository(apiClient, taskDao, scheduler)

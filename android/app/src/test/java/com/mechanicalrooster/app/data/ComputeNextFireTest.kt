@@ -30,4 +30,25 @@ class ComputeNextFireTest {
         assert(next > now)
         assert(next - now <= 15 * minute)
     }
+
+    @Test
+    fun `future first-warning time overrides the initial delay`() {
+        val createdAt = 1_000_000L
+        val firstWarning = createdAt + 500 * minute
+        val next = computeNextFire(
+            createdAt, 60, 15, nowMillis = createdAt + 10 * minute, firstWarningAtMillis = firstWarning,
+        )
+        assertEquals(firstWarning, next)
+    }
+
+    @Test
+    fun `past first-warning time aligns onto the interval`() {
+        val createdAt = 1_000_000L
+        val firstWarning = createdAt + 60 * minute
+        // 70 min in: first-warning (60m) passed, next repeat lands at 75m.
+        val next = computeNextFire(
+            createdAt, 999, 15, nowMillis = createdAt + 70 * minute, firstWarningAtMillis = firstWarning,
+        )
+        assertEquals(createdAt + 75 * minute, next)
+    }
 }

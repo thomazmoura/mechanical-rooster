@@ -21,6 +21,7 @@ data class OpenTaskEntity(
     val createdAtMillis: Long,
     val initialDelayMinutes: Int,
     val repeatIntervalMinutes: Int,
+    val firstWarningAtMillis: Long? = null,
     val nextFireAtMillis: Long,
     val pendingDone: Boolean = false,
 )
@@ -61,7 +62,7 @@ interface OpenTaskDao {
     suspend fun clear()
 }
 
-@Database(entities = [OpenTaskEntity::class], version = 1, exportSchema = false)
+@Database(entities = [OpenTaskEntity::class], version = 2, exportSchema = false)
 abstract class RoosterDb : RoomDatabase() {
     abstract fun openTaskDao(): OpenTaskDao
 }

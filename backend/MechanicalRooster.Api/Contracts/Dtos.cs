@@ -16,7 +16,7 @@ public record SettingsDto(
         new(user.InitialDelayMinutes, user.RepeatIntervalMinutes, user.MediumWaitMinutes, user.LongWaitMinutes);
 }
 
-public record CreateTaskRequest(string Title);
+public record CreateTaskRequest(string Title, DateTime? FirstWarningAt = null);
 
 public record TaskDto(
     Guid Id,
@@ -24,9 +24,10 @@ public record TaskDto(
     DateTime CreatedAt,
     DateTime? CompletedAt,
     int InitialDelayMinutes,
-    int RepeatIntervalMinutes)
+    int RepeatIntervalMinutes,
+    DateTime? FirstWarningAt)
 {
     public static TaskDto From(TaskItem task) => new(
         task.Id, task.Title, task.CreatedAt, task.CompletedAt,
-        task.InitialDelayMinutes, task.RepeatIntervalMinutes);
+        task.InitialDelayMinutes, task.RepeatIntervalMinutes, task.FirstWarningAt);
 }

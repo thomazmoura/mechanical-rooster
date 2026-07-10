@@ -22,7 +22,7 @@ data class LoginResponse(
 )
 
 @Serializable
-data class CreateTaskRequest(val title: String)
+data class CreateTaskRequest(val title: String, val firstWarningAt: String? = null)
 
 @Serializable
 data class TaskDto(
@@ -32,4 +32,5 @@ data class TaskDto(
     val completedAt: String? = null,
     val initialDelayMinutes: Int,
     val repeatIntervalMinutes: Int,
+    val firstWarningAt: String? = null,
 )
