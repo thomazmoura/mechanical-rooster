@@ -11,7 +11,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -52,12 +51,9 @@ fun SignInScreen(viewModel: AppViewModel) {
         Spacer(Modifier.height(32.dp))
 
         if (showAdvanced) {
-            OutlinedTextField(
+            ServerUrlField(
                 value = baseUrl,
                 onValueChange = { baseUrl = it },
-                label = { Text("Server URL") },
-                supportingText = { Text("The machine on your network running the API") },
-                singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(16.dp))

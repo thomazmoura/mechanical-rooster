@@ -49,4 +49,38 @@ class SettingsScenarios : ScenarioTest() {
 
         assertEquals(SettingsDto(45, 20, 120, 480), settingsStore.settings)
     }
+
+    @Test
+    fun `changing the server URL rewrites it but keeps the session and local data`() = scenario {
+        givenSyncedTask("water plants")
+        givenOffline()
+        whenTaskCreated("buy milk") // stays pendingCreate
+        val savedSettings = settingsStore.settings
+        val syncRequestsBefore = syncRequests.requests
+
+        whenServerUrlChanged("https://new.badger.test/")
+
+        assertEquals("normalized (trailing slash trimmed)", "https://new.badger.test", settingsStore.baseUrl)
+        thenTaskVisible("water plants")
+        thenTaskVisible("buy milk")
+        assertTrue("pending work survives", localTaskByTitle("buy milk").pendingCreate)
+        assertTrue("no alarms cancelled", alarms.cancelled.isEmpty())
+        assertEquals("settings untouched", savedSettings, settingsStore.settings)
+        assertEquals("still signed in", "test-jwt", settingsStore.current().token)
+        assertEquals("one sync requested", syncRequestsBefore + 1, syncRequests.requests)
+    }
+
+    @Test
+    fun `a blank server URL is rejected and nothing changes`() = scenario {
+        whenServerUrlChangeFailsWith("   /")
+
+        assertEquals("http://badger.test", settingsStore.baseUrl)
+    }
+
+    @Test
+    fun `a malformed server URL is rejected and nothing changes`() = scenario {
+        whenServerUrlChangeFailsWith("not a url")
+
+        assertEquals("http://badger.test", settingsStore.baseUrl)
+    }
 }

@@ -218,9 +218,10 @@ class RecordingSyncScheduler : SyncScheduler {
 class FakeSettingsStore : SettingsStore {
     var settings = SettingsDto(60, 15, 60, 240)
     var dirty = false
+    var baseUrl = "http://badger.test"
 
     override suspend fun current(): Session = Session(
-        baseUrl = "http://badger.test",
+        baseUrl = baseUrl,
         token = "test-jwt",
         email = "test@example.com",
         initialDelayMinutes = settings.initialDelayMinutes,
@@ -228,6 +229,10 @@ class FakeSettingsStore : SettingsStore {
         mediumWaitMinutes = settings.mediumWaitMinutes,
         longWaitMinutes = settings.longWaitMinutes,
     )
+
+    override suspend fun saveBaseUrl(baseUrl: String) {
+        this.baseUrl = baseUrl
+    }
 
     override suspend fun saveSettings(settings: SettingsDto) {
         this.settings = settings

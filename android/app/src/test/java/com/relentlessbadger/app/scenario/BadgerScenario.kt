@@ -108,6 +108,17 @@ class BadgerScenario {
 
     suspend fun whenSettingsSaved(settings: SettingsDto) = repository.updateSettings(settings)
 
+    suspend fun whenServerUrlChanged(url: String) = repository.changeServer(url)
+
+    suspend fun whenServerUrlChangeFailsWith(url: String) {
+        try {
+            repository.changeServer(url)
+        } catch (_: IllegalArgumentException) {
+            return
+        }
+        fail("expected the server URL change to be rejected")
+    }
+
     suspend fun whenSyncRuns() = repository.sync()
 
     suspend fun whenSyncFailsWith(check: (Exception) -> Boolean = { true }) {
@@ -128,6 +139,10 @@ class BadgerScenario {
 
     suspend fun localTask(id: String): OpenTaskEntity =
         taskDao.getById(id) ?: error("no local task with id $id")
+
+    suspend fun localTaskByTitle(title: String): OpenTaskEntity =
+        taskDao.getAll().firstOrNull { it.title == title }
+            ?: error("no local task titled '$title'")
 
     suspend fun thenTaskVisible(title: String) {
         assertTrue("expected '$title' in the open list", openTaskTitles().contains(title))

@@ -6,6 +6,7 @@ import com.relentlessbadger.app.db.TitleHistoryDao
 import com.relentlessbadger.app.notify.ReminderScheduler
 import com.relentlessbadger.app.sync.SyncScheduler
 import kotlinx.coroutines.flow.Flow
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import retrofit2.HttpException
 import java.time.Instant
 import java.util.UUID
@@ -202,6 +203,20 @@ class TaskRepository(
     suspend fun updateSettings(newSettings: SettingsDto) {
         settings.saveSettings(newSettings)
         settings.markSettingsDirty()
+        syncScheduler.requestSync()
+    }
+
+    /**
+     * Points the app at a new server. Keeps the session and all local data;
+     * pending work will sync to the new server.
+     */
+    suspend fun changeServer(baseUrl: String) {
+        val normalized = baseUrl.trim().trimEnd('/')
+        require(normalized.isNotBlank()) { "Enter the server URL first." }
+        requireNotNull("$normalized/".toHttpUrlOrNull()) {
+            "That doesn't look like a valid http(s) URL."
+        }
+        settings.saveBaseUrl(normalized)
         syncScheduler.requestSync()
     }
 

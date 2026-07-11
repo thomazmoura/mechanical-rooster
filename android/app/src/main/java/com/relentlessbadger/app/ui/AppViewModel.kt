@@ -158,6 +158,12 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    fun changeServerUrl(url: String) {
+        launchBusy {
+            container.repository.changeServer(url)
+        }
+    }
+
     fun signOut() {
         launchBusy {
             container.repository.signOut()

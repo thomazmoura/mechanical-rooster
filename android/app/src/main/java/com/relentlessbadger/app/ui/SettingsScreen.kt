@@ -6,9 +6,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -18,6 +21,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -40,6 +44,10 @@ fun SettingsScreen(
     var repeatInterval by rememberSaveable { mutableStateOf(session.repeatIntervalMinutes.toString()) }
     var mediumWait by rememberSaveable { mutableStateOf(session.mediumWaitMinutes.toString()) }
     var longWait by rememberSaveable { mutableStateOf(session.longWaitMinutes.toString()) }
+    var showAdvanced by rememberSaveable { mutableStateOf(false) }
+    var serverUrl by rememberSaveable { mutableStateOf(session.baseUrl) }
+    var confirmServerChange by rememberSaveable { mutableStateOf(false) }
+    val normalizedServerUrl = serverUrl.trim().trimEnd('/')
 
     val initialDelayValue = initialDelay.toIntOrNull()
     val repeatIntervalValue = repeatInterval.toIntOrNull()
@@ -64,6 +72,7 @@ fun SettingsScreen(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(16.dp),
         ) {
             Text(
@@ -160,10 +169,61 @@ fun SettingsScreen(
                 Text("Sign out")
             }
 
+            Spacer(Modifier.height(8.dp))
+            TextButton(onClick = { showAdvanced = !showAdvanced }) {
+                Text(if (showAdvanced) "Hide advanced" else "Advanced")
+            }
+
+            if (showAdvanced) {
+                ServerUrlField(
+                    value = serverUrl,
+                    onValueChange = { serverUrl = it },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = { confirmServerChange = true },
+                    enabled = !viewModel.busy && normalizedServerUrl.isNotBlank() &&
+                        normalizedServerUrl != session.baseUrl,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Change server URL")
+                }
+            }
+
             viewModel.errorMessage?.let { message ->
                 Spacer(Modifier.height(16.dp))
                 Text(message, color = MaterialTheme.colorScheme.error)
             }
         }
+    }
+
+    if (confirmServerChange) {
+        AlertDialog(
+            onDismissRequest = { confirmServerChange = false },
+            title = { Text("Change server?") },
+            text = {
+                Text(
+                    "Your current session may be rejected by the new server, and you " +
+                        "may need to sign in again. Your tasks stay on this device " +
+                        "and will sync to the new server.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmServerChange = false
+                        viewModel.changeServerUrl(serverUrl)
+                    },
+                ) {
+                    Text("Change server")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmServerChange = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 }

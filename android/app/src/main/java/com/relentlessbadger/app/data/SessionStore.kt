@@ -26,11 +26,12 @@ data class Session(
 
 /**
  * The slice of session state the business logic needs: the current settings
- * snapshot and the "settings edited locally, not yet pushed" flag. Fakeable
- * in scenario tests without dragging DataStore in.
+ * snapshot, the server base URL, and the "settings edited locally, not yet
+ * pushed" flag. Fakeable in scenario tests without dragging DataStore in.
  */
 interface SettingsStore {
     suspend fun current(): Session
+    suspend fun saveBaseUrl(baseUrl: String)
     suspend fun saveSettings(settings: SettingsDto)
     suspend fun markSettingsDirty()
     suspend fun clearSettingsDirty()
@@ -73,8 +74,10 @@ class SessionStore(private val context: Context) : SettingsStore {
 
     override suspend fun current(): Session = sessionFlow.first()
 
-    suspend fun saveBaseUrl(baseUrl: String) {
-        context.dataStore.edit { it[Keys.BASE_URL] = baseUrl.trim().trimEnd('/') }
+    override suspend fun saveBaseUrl(baseUrl: String) {
+        val normalized = baseUrl.trim().trimEnd('/')
+        context.dataStore.edit { it[Keys.BASE_URL] = normalized }
+        cachedBaseUrl = normalized
     }
 
     suspend fun saveLogin(token: String, email: String, settings: SettingsDto) {
