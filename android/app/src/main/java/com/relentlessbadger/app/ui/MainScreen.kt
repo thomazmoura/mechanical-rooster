@@ -157,11 +157,12 @@ fun MainScreen(
                     )
                 }
             } else {
-                // Ticks so scheduled tasks move into the active section when
-                // their start time passes without any data change.
+                // Ticks so the "next nag" countdowns stay current and scheduled
+                // tasks move into the active section when their start time
+                // passes without any data change.
                 val nowMillis by produceState(System.currentTimeMillis()) {
                     while (true) {
-                        delay(30_000)
+                        delay(15_000)
                         value = System.currentTimeMillis()
                     }
                 }
@@ -175,6 +176,7 @@ fun MainScreen(
                         TaskRow(
                             task = task,
                             scheduled = false,
+                            nowMillis = nowMillis,
                             mediumWaitMinutes = session?.mediumWaitMinutes ?: 60,
                             longWaitMinutes = session?.longWaitMinutes ?: 240,
                             onDone = { viewModel.completeTask(task.id) },
@@ -196,6 +198,7 @@ fun MainScreen(
                             TaskRow(
                                 task = task,
                                 scheduled = true,
+                                nowMillis = nowMillis,
                                 mediumWaitMinutes = session?.mediumWaitMinutes ?: 60,
                                 longWaitMinutes = session?.longWaitMinutes ?: 240,
                                 onDone = { viewModel.completeTask(task.id) },
@@ -447,6 +450,7 @@ private fun formatDateTime(epochMillis: Long): String =
 private fun TaskRow(
     task: OpenTaskEntity,
     scheduled: Boolean,
+    nowMillis: Long,
     mediumWaitMinutes: Int,
     longWaitMinutes: Int,
     onDone: () -> Unit,
@@ -470,7 +474,7 @@ private fun TaskRow(
             val schedule = if (scheduled) {
                 "starts ${formatDateTime(task.firstWarningAtMillis ?: task.nextFireAtMillis)}"
             } else {
-                "next nag ${relativeFuture(task.nextFireAtMillis)} · every ${task.repeatIntervalMinutes} min"
+                "next nag ${relativeFuture(task.nextFireAtMillis, nowMillis)} · every ${task.repeatIntervalMinutes} min"
             }
             Text(
                 schedule,
@@ -724,8 +728,8 @@ private fun recurrenceLabel(recurrence: Recurrence): String {
 private fun defaultWeekdayBit(): Int =
     1 shl java.time.LocalDate.now().dayOfWeek.ordinal
 
-private fun relativeFuture(epochMillis: Long): String {
-    val remaining = epochMillis - System.currentTimeMillis()
+private fun relativeFuture(epochMillis: Long, nowMillis: Long): String {
+    val remaining = epochMillis - nowMillis
     val minutes = TimeUnit.MILLISECONDS.toMinutes(remaining)
     return when {
         minutes < 1 -> "now"

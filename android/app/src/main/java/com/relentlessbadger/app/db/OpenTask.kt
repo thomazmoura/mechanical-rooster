@@ -44,7 +44,7 @@ data class OpenTaskEntity(
 
 @Dao
 interface OpenTaskDao {
-    @Query("SELECT * FROM open_tasks WHERE pendingDone = 0 ORDER BY createdAtMillis DESC")
+    @Query("SELECT * FROM open_tasks WHERE pendingDone = 0 ORDER BY nextFireAtMillis ASC, createdAtMillis DESC")
     fun observeActive(): Flow<List<OpenTaskEntity>>
 
     @Query("SELECT * FROM open_tasks WHERE pendingDone = 0")
