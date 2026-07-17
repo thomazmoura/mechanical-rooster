@@ -3,6 +3,7 @@ package com.relentlessbadger.app.ui
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
+import android.text.format.DateFormat
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -89,6 +90,7 @@ fun MainScreen(
     val session by viewModel.session.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val use24Hour = DateFormat.is24HourFormat(context)
 
     LaunchedEffect(Unit) {
         requestNotificationPermission()
@@ -140,7 +142,7 @@ fun MainScreen(
                 }
             }
 
-            QuickAdd(viewModel)
+            QuickAdd(viewModel, use24Hour)
 
             Spacer(Modifier.height(8.dp))
 
@@ -177,6 +179,7 @@ fun MainScreen(
                             task = task,
                             scheduled = false,
                             nowMillis = nowMillis,
+                            use24Hour = use24Hour,
                             mediumWaitMinutes = session?.mediumWaitMinutes ?: 60,
                             longWaitMinutes = session?.longWaitMinutes ?: 240,
                             onDone = { viewModel.completeTask(task.id) },
@@ -199,6 +202,7 @@ fun MainScreen(
                                 task = task,
                                 scheduled = true,
                                 nowMillis = nowMillis,
+                                use24Hour = use24Hour,
                                 mediumWaitMinutes = session?.mediumWaitMinutes ?: 60,
                                 longWaitMinutes = session?.longWaitMinutes ?: 240,
                                 onDone = { viewModel.completeTask(task.id) },
@@ -216,6 +220,7 @@ fun MainScreen(
     viewModel.editingTask?.let { task ->
         EditScheduleDialog(
             task = task,
+            use24Hour = use24Hour,
             onDismiss = { viewModel.editingTask = null },
             onSave = { firstWarningAtMillis, repeatIntervalMinutes, recurrence ->
                 viewModel.saveSchedule(task.id, firstWarningAtMillis, repeatIntervalMinutes, recurrence)
@@ -225,7 +230,7 @@ fun MainScreen(
 }
 
 @Composable
-private fun QuickAdd(viewModel: AppViewModel) {
+private fun QuickAdd(viewModel: AppViewModel, use24Hour: Boolean) {
     var showDateTimePicker by remember { mutableStateOf(false) }
     var showRecurrencePicker by remember { mutableStateOf(false) }
     // A repeating task needs a start time; route through the picker first.
@@ -291,7 +296,7 @@ private fun QuickAdd(viewModel: AppViewModel) {
             if (firstWarning != null) {
                 AssistChip(
                     onClick = { showDateTimePicker = true },
-                    label = { Text("First nag ${formatDateTime(firstWarning)}") },
+                    label = { Text("First nag ${formatDateTime(firstWarning, use24Hour)}") },
                     leadingIcon = { Icon(Icons.Filled.Schedule, contentDescription = null) },
                     trailingIcon = {
                         Icon(
@@ -441,16 +446,19 @@ private fun DateTimePickerFlow(
     }
 }
 
-private val dateTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("MMM d, h:mm a")
+private val dateTimeFormatter12: DateTimeFormatter = DateTimeFormatter.ofPattern("MMM d, h:mm a")
+private val dateTimeFormatter24: DateTimeFormatter = DateTimeFormatter.ofPattern("MMM d, HH:mm")
 
-private fun formatDateTime(epochMillis: Long): String =
-    Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).format(dateTimeFormatter)
+internal fun formatDateTime(epochMillis: Long, use24Hour: Boolean): String =
+    Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault())
+        .format(if (use24Hour) dateTimeFormatter24 else dateTimeFormatter12)
 
 @Composable
 private fun TaskRow(
     task: OpenTaskEntity,
     scheduled: Boolean,
     nowMillis: Long,
+    use24Hour: Boolean,
     mediumWaitMinutes: Int,
     longWaitMinutes: Int,
     onDone: () -> Unit,
@@ -472,7 +480,7 @@ private fun TaskRow(
                 overflow = TextOverflow.Ellipsis,
             )
             val schedule = if (scheduled) {
-                "starts ${formatDateTime(task.firstWarningAtMillis ?: task.nextFireAtMillis)}"
+                "starts ${formatDateTime(task.firstWarningAtMillis ?: task.nextFireAtMillis, use24Hour)}"
             } else {
                 "next nag ${relativeFuture(task.nextFireAtMillis, nowMillis)} · every ${task.repeatIntervalMinutes} min"
             }
@@ -609,6 +617,7 @@ private fun RecurrencePickerDialog(
 @Composable
 private fun EditScheduleDialog(
     task: OpenTaskEntity,
+    use24Hour: Boolean,
     onDismiss: () -> Unit,
     onSave: (firstWarningAtMillis: Long?, repeatIntervalMinutes: Int, recurrence: Recurrence?) -> Unit,
 ) {
@@ -637,7 +646,7 @@ private fun EditScheduleDialog(
                 AssistChip(
                     onClick = { showDateTimePicker = true },
                     label = {
-                        Text(startMillis?.let { "Starts ${formatDateTime(it)}" } ?: "Set start time")
+                        Text(startMillis?.let { "Starts ${formatDateTime(it, use24Hour)}" } ?: "Set start time")
                     },
                     leadingIcon = { Icon(Icons.Filled.Schedule, contentDescription = null) },
                     trailingIcon = {
