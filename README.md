@@ -1,4 +1,4 @@
-# RelentlessBadger 🐓
+# <img src="design/logo-color-source.png" alt="RelentlessBadger logo" width="40" align="top"/> RelentlessBadger
 
 A persistent-reminder to-do app: tasks are extremely fast to add, and the app **nags you with notifications until you mark them done**.
 
