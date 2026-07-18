@@ -40,6 +40,13 @@ data class CreateTaskRequest(
     val seriesId: String? = null,
 )
 
+// Carries when the task was actually completed on the device, so a completion
+// flushed by a later sync keeps its true time; null means "now".
+@Serializable
+data class CompleteTaskRequest(
+    val completedAt: String? = null,
+)
+
 // Full-state schedule update: null on a nullable field means "clear it".
 @Serializable
 data class UpdateTaskScheduleRequest(

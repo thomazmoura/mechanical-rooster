@@ -367,7 +367,16 @@ class TaskRepository(
     private suspend fun flushPendingCompletions() {
         for (task in dao.getPendingDone()) {
             try {
-                apiClient.api().completeTask(task.id)
+                // The cached completion row holds the moment the task was
+                // actually completed on this device; without it the server
+                // would stamp the completion with the sync time.
+                val completedAtMillis = completedDao.getById(task.id)?.completedAtMillis
+                apiClient.api().completeTask(
+                    task.id,
+                    CompleteTaskRequest(
+                        completedAtMillis?.let { Instant.ofEpochMilli(it).toString() },
+                    ),
+                )
                 dao.delete(task.id)
             } catch (e: HttpException) {
                 when {

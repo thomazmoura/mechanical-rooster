@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.Instant
 
 class CompleteTaskScenarios : ScenarioTest() {
 
@@ -69,6 +70,25 @@ class CompleteTaskScenarios : ScenarioTest() {
 
         assertEquals(listOf(task.id), server.receivedCompletions)
         assertNull(taskDao.getById(task.id))
+    }
+
+    @Test
+    fun `a completion pushed by a later sync keeps the time the task was completed, not the sync time`() = scenario {
+        val task = givenSyncedTask("water plants")
+        givenOffline()
+
+        whenTaskCompleted(task.id)
+        val completedAtMillis = clock.now()
+
+        whenTimeAdvancesMinutes(90)
+        givenOnline()
+        whenSyncRuns()
+
+        assertEquals(
+            "server records the local completion time",
+            Instant.ofEpochMilli(completedAtMillis).toString(),
+            server.tasks[task.id]?.completedAt,
+        )
     }
 
     @Test

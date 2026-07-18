@@ -32,7 +32,10 @@ interface BadgerApi {
     ): TaskDto
 
     @POST("tasks/{id}/complete")
-    suspend fun completeTask(@Path("id") id: String): TaskDto
+    suspend fun completeTask(
+        @Path("id") id: String,
+        @Body request: CompleteTaskRequest,
+    ): TaskDto
 
     @DELETE("tasks/{id}")
     suspend fun deleteTask(@Path("id") id: String): Response<Unit>

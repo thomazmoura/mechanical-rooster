@@ -36,6 +36,9 @@ interface CompletedTaskDao {
     )
     fun observeBetween(fromMillis: Long, toMillis: Long): Flow<List<CompletedTaskEntity>>
 
+    @Query("SELECT * FROM completed_tasks WHERE id = :id")
+    suspend fun getById(id: String): CompletedTaskEntity?
+
     @Upsert
     suspend fun upsert(entry: CompletedTaskEntity)
 

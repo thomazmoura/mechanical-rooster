@@ -80,6 +80,21 @@ public class ApiTests : IClassFixture<TestAppFactory>
     }
 
     [Fact]
+    public async Task Complete_preserves_the_client_completion_time()
+    {
+        var client = await LoginAsync(sub: "completed-at-sub");
+        var task = await (await client.PostAsJsonAsync("/tasks", new CreateTaskRequest("done offline")))
+            .Content.ReadFromJsonAsync<TaskDto>();
+
+        var completedAt = new DateTime(2026, 7, 10, 8, 30, 0, DateTimeKind.Utc);
+        var response = await client.PostAsJsonAsync(
+            $"/tasks/{task!.Id}/complete", new CompleteTaskRequest(completedAt));
+        response.EnsureSuccessStatusCode();
+        var completed = await response.Content.ReadFromJsonAsync<TaskDto>();
+        Assert.Equal(completedAt, completed!.CompletedAt!.Value.ToUniversalTime());
+    }
+
+    [Fact]
     public async Task First_warning_time_round_trips_and_defaults_to_null()
     {
         var client = await LoginAsync(sub: "first-warning-sub");

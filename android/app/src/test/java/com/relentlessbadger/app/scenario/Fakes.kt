@@ -1,6 +1,7 @@
 package com.relentlessbadger.app.scenario
 
 import com.relentlessbadger.app.data.BadgerApi
+import com.relentlessbadger.app.data.CompleteTaskRequest
 import com.relentlessbadger.app.data.CreateTaskRequest
 import com.relentlessbadger.app.data.LoginRequest
 import com.relentlessbadger.app.data.LoginResponse
@@ -165,11 +166,13 @@ class FakeBadgerApi(private val clock: TimeSource) : BadgerApi {
         return updated
     }
 
-    override suspend fun completeTask(id: String): TaskDto {
+    override suspend fun completeTask(id: String, request: CompleteTaskRequest): TaskDto {
         gate()
         val task = tasks[id] ?: throw httpError(404)
         receivedCompletions += id
-        val done = task.copy(completedAt = Instant.ofEpochMilli(clock.now()).toString())
+        val done = task.copy(
+            completedAt = request.completedAt ?: Instant.ofEpochMilli(clock.now()).toString(),
+        )
         tasks[id] = done
         return done
     }

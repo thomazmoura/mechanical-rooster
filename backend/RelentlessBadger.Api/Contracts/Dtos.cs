@@ -31,6 +31,10 @@ public record CreateTaskRequest(
     int? RecurDaysOfWeek = null,
     Guid? SeriesId = null);
 
+// CompletedAt lets an offline-first client report when the task was actually
+// completed on the device; omitted (or an empty body) means "now".
+public record CompleteTaskRequest(DateTime? CompletedAt = null);
+
 // Full-state update: the client always sends the complete desired schedule,
 // so null on a nullable field means "clear it" (no PATCH absent-vs-null games).
 public record UpdateTaskScheduleRequest(

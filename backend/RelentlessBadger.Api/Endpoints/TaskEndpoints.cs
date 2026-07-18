@@ -2,6 +2,8 @@ using System.Security.Claims;
 using RelentlessBadger.Api.Contracts;
 using RelentlessBadger.Api.Data;
 using RelentlessBadger.Api.Models;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
 
 namespace RelentlessBadger.Api.Endpoints;
@@ -109,7 +111,11 @@ public static class TaskEndpoints
             return Results.Ok(TaskDto.From(task));
         });
 
-        group.MapPost("/{id:guid}/complete", async (Guid id, ClaimsPrincipal principal, AppDbContext db) =>
+        group.MapPost("/{id:guid}/complete", async (
+            Guid id,
+            [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] CompleteTaskRequest? request,
+            ClaimsPrincipal principal,
+            AppDbContext db) =>
         {
             var userId = principal.GetUserId();
             var task = await db.Tasks.SingleOrDefaultAsync(t => t.Id == id && t.UserId == userId);
@@ -118,7 +124,7 @@ public static class TaskEndpoints
                 return Results.NotFound();
             }
 
-            task.CompletedAt ??= DateTime.UtcNow;
+            task.CompletedAt ??= request?.CompletedAt?.ToUniversalTime() ?? DateTime.UtcNow;
             await db.SaveChangesAsync();
             return Results.Ok(TaskDto.From(task));
         });
