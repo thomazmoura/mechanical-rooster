@@ -4,6 +4,7 @@ import android.app.Application
 import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -41,7 +42,7 @@ class MigrationTest {
         }
 
         val db = Room.databaseBuilder(context, BadgerDb::class.java, "migration-test.db")
-            .addMigrations(BadgerDb.MIGRATION_2_3, BadgerDb.MIGRATION_3_4)
+            .addMigrations(BadgerDb.MIGRATION_2_3, BadgerDb.MIGRATION_3_4, BadgerDb.MIGRATION_4_5)
             .allowMainThreadQueries()
             .build()
         try {
@@ -91,7 +92,7 @@ class MigrationTest {
         }
 
         val db = Room.databaseBuilder(context, BadgerDb::class.java, "migration-test-v3.db")
-            .addMigrations(BadgerDb.MIGRATION_2_3, BadgerDb.MIGRATION_3_4)
+            .addMigrations(BadgerDb.MIGRATION_2_3, BadgerDb.MIGRATION_3_4, BadgerDb.MIGRATION_4_5)
             .allowMainThreadQueries()
             .build()
         try {
@@ -108,6 +109,61 @@ class MigrationTest {
                 assertFalse("migrated rows have no pending edits", task.pendingUpdate)
 
                 assertEquals(listOf("water plants"), db.titleHistoryDao().getRanked())
+            }
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun `existing v4 data survives the migration to v5`() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        val dbFile = context.getDatabasePath("migration-test-v4.db")
+        dbFile.parentFile?.mkdirs()
+        dbFile.delete()
+
+        // The exact schema Room generated for version 4 (pre completed_tasks),
+        // with a task an existing install would have.
+        SQLiteDatabase.openOrCreateDatabase(dbFile, null).use { old ->
+            old.execSQL(
+                "CREATE TABLE IF NOT EXISTS `open_tasks` (`id` TEXT NOT NULL, " +
+                    "`title` TEXT NOT NULL, `createdAtMillis` INTEGER NOT NULL, " +
+                    "`initialDelayMinutes` INTEGER NOT NULL, `repeatIntervalMinutes` INTEGER NOT NULL, " +
+                    "`firstWarningAtMillis` INTEGER, `nextFireAtMillis` INTEGER NOT NULL, " +
+                    "`recurEveryN` INTEGER, `recurUnit` TEXT, `recurDaysOfWeek` INTEGER, " +
+                    "`seriesId` TEXT, `pendingDone` INTEGER NOT NULL, `pendingCreate` INTEGER NOT NULL, " +
+                    "`pendingUpdate` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+            )
+            old.execSQL(
+                "CREATE TABLE IF NOT EXISTS `title_history` (`title` TEXT NOT NULL, " +
+                    "`useCount` INTEGER NOT NULL, `lastUsedAtMillis` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`title`))",
+            )
+            old.execSQL(
+                "INSERT INTO open_tasks VALUES ('task-1', 'water plants', 1000, 60, 15, " +
+                    "5000, 5000, 1, 'days', NULL, 'task-1', 0, 0, 0)",
+            )
+            old.version = 4
+        }
+
+        val db = Room.databaseBuilder(context, BadgerDb::class.java, "migration-test-v4.db")
+            .addMigrations(BadgerDb.MIGRATION_2_3, BadgerDb.MIGRATION_3_4, BadgerDb.MIGRATION_4_5)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            runBlocking {
+                val task = db.openTaskDao().getAll().single()
+                assertEquals("task-1", task.id)
+                assertEquals("water plants", task.title)
+                assertEquals(1, task.recurEveryN)
+                assertEquals("task-1", task.seriesId)
+
+                val dao = db.completedTaskDao()
+                dao.upsert(CompletedTaskEntity("done-1", "walk dog", 9000L, null))
+                assertEquals(
+                    listOf("walk dog"),
+                    dao.observeBetween(0L, 10_000L).first().map { it.title },
+                )
             }
         } finally {
             db.close()

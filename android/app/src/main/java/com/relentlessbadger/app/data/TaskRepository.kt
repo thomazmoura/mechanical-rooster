@@ -1,5 +1,7 @@
 package com.relentlessbadger.app.data
 
+import com.relentlessbadger.app.db.CompletedTaskDao
+import com.relentlessbadger.app.db.CompletedTaskEntity
 import com.relentlessbadger.app.db.OpenTaskDao
 import com.relentlessbadger.app.db.OpenTaskEntity
 import com.relentlessbadger.app.db.TitleHistoryDao
@@ -21,6 +23,7 @@ class TaskRepository(
     private val apiClient: ApiProvider,
     private val dao: OpenTaskDao,
     private val titleDao: TitleHistoryDao,
+    private val completedDao: CompletedTaskDao,
     private val scheduler: ReminderScheduler,
     private val settings: SettingsStore,
     private val syncScheduler: SyncScheduler,
@@ -28,6 +31,9 @@ class TaskRepository(
 ) {
 
     fun openTasks(): Flow<List<OpenTaskEntity>> = dao.observeActive()
+
+    fun completedTasksBetween(fromMillis: Long, toMillis: Long): Flow<List<CompletedTaskEntity>> =
+        completedDao.observeBetween(fromMillis, toMillis)
 
     /**
      * Creates the task locally and schedules its first reminder immediately.
@@ -79,6 +85,11 @@ class TaskRepository(
      */
     suspend fun completeTask(id: String) {
         val task = dao.getById(id) ?: return
+        // Cached before the open row is flagged (and eventually deleted by the
+        // sync flush), so the calendar's history survives the completion.
+        completedDao.upsert(
+            CompletedTaskEntity(task.id, task.title, timeSource.now(), task.seriesId),
+        )
         dao.markPendingDone(id)
         scheduler.cancel(id)
         task.recurrence()?.let { spawnNextOccurrence(task, it) }
@@ -253,6 +264,20 @@ class TaskRepository(
             .forEach { scheduler.cancel(it.id) }
         dao.deleteSyncedNotIn(remoteIds.ifEmpty { setOf("") }.toList())
 
+        // Completion history for the calendar. Append-only IGNORE: a completion
+        // pushed moments ago comes straight back with the server's timestamp,
+        // but the locally cached row (with the truthful local time) wins. The
+        // full history is small; add a `since` param server-side if it grows.
+        val done = apiClient.api().getTasks("done")
+        completedDao.insertIgnoring(
+            done.mapNotNull { dto ->
+                val completedAt = dto.completedAt ?: return@mapNotNull null
+                CompletedTaskEntity(
+                    dto.id, dto.title, Instant.parse(completedAt).toEpochMilli(), dto.seriesId,
+                )
+            },
+        )
+
         titleDao.upsertFromServer(apiClient.api().getTitles(), timeSource.now())
         pullSettingsIfClean()
 
@@ -268,6 +293,7 @@ class TaskRepository(
         dao.getAll().forEach { scheduler.cancel(it.id) }
         dao.clear()
         titleDao.clear()
+        completedDao.clear()
     }
 
     private suspend fun pushPendingCreates() {

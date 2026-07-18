@@ -50,6 +50,26 @@ class FakeBadgerApi(private val clock: TimeSource) : BadgerApi {
 
     fun openTasks(): List<TaskDto> = tasks.values.filter { it.completedAt == null }
 
+    fun doneTasks(): List<TaskDto> = tasks.values.filter { it.completedAt != null }
+
+    /** A completion that happened elsewhere (e.g. on another device). */
+    fun seedCompletedTask(
+        title: String,
+        completedAtMillis: Long,
+        id: String = UUID.randomUUID().toString(),
+        createdAtMillis: Long = completedAtMillis,
+        seriesId: String? = null,
+    ): TaskDto {
+        val dto = seedOpenTask(
+            title,
+            id = id,
+            createdAtMillis = createdAtMillis,
+            seriesId = seriesId,
+        ).copy(completedAt = Instant.ofEpochMilli(completedAtMillis).toString())
+        tasks[id] = dto
+        return dto
+    }
+
     fun seedOpenTask(
         title: String,
         id: String = UUID.randomUUID().toString(),
@@ -103,7 +123,7 @@ class FakeBadgerApi(private val clock: TimeSource) : BadgerApi {
     override suspend fun getTasks(status: String): List<TaskDto> {
         gate()
         if (failTaskPull) throw ConnectException("connection dropped mid-sync")
-        return openTasks()
+        return if (status == "done") doneTasks() else openTasks()
     }
 
     override suspend fun createTask(request: CreateTaskRequest): TaskDto {

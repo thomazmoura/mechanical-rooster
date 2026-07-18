@@ -8,7 +8,9 @@ import com.relentlessbadger.app.data.SettingsDto
 import com.relentlessbadger.app.data.TaskDto
 import com.relentlessbadger.app.data.TaskRepository
 import com.relentlessbadger.app.db.BadgerDb
+import com.relentlessbadger.app.db.CompletedTaskEntity
 import com.relentlessbadger.app.db.OpenTaskEntity
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -41,11 +43,13 @@ class BadgerScenario {
 
     val taskDao = db.openTaskDao()
     val titleDao = db.titleHistoryDao()
+    val completedDao = db.completedTaskDao()
 
     val repository = TaskRepository(
         apiClient = { server },
         dao = taskDao,
         titleDao = titleDao,
+        completedDao = completedDao,
         scheduler = alarms,
         settings = settingsStore,
         syncScheduler = syncRequests,
@@ -64,6 +68,9 @@ class BadgerScenario {
 
     fun givenServerHasOpenTask(title: String, firstWarningAtMillis: Long? = null): TaskDto =
         server.seedOpenTask(title, firstWarningAtMillis = firstWarningAtMillis)
+
+    fun givenServerHasCompletedTask(title: String, completedAtMillis: Long): TaskDto =
+        server.seedCompletedTask(title, completedAtMillis)
 
     suspend fun givenLocalSettings(
         initialDelayMinutes: Int,
@@ -171,6 +178,24 @@ class BadgerScenario {
         assertTrue(
             "expected server not to list '$title' as open",
             server.openTasks().none { it.title == title },
+        )
+    }
+
+    suspend fun completedCache(): List<CompletedTaskEntity> =
+        completedDao.observeBetween(Long.MIN_VALUE, Long.MAX_VALUE).first()
+
+    suspend fun thenCompletionCached(title: String, atMillis: Long? = null) {
+        val entry = completedCache().firstOrNull { it.title == title }
+            ?: error("expected a cached completion titled '$title'")
+        if (atMillis != null) {
+            assertEquals("cached completion time for '$title'", atMillis, entry.completedAtMillis)
+        }
+    }
+
+    suspend fun thenNoCompletionCached(title: String) {
+        assertTrue(
+            "expected no cached completion titled '$title'",
+            completedCache().none { it.title == title },
         )
     }
 

@@ -16,12 +16,20 @@ import com.relentlessbadger.app.auth.GoogleSignIn
 import com.relentlessbadger.app.data.LoginRequest
 import com.relentlessbadger.app.data.Recurrence
 import com.relentlessbadger.app.data.SettingsDto
+import com.relentlessbadger.app.db.CompletedTaskEntity
 import com.relentlessbadger.app.db.OpenTaskEntity
 import com.relentlessbadger.app.fuzzy.Fuzzy
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.LocalDate
+import java.time.YearMonth
+import java.time.ZoneId
 
 class AppViewModel(private val container: AppContainer) : ViewModel() {
 
@@ -29,6 +37,29 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     val openTasks: StateFlow<List<OpenTaskEntity>> = container.repository.openTasks()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Month shown in the calendar tab. */
+    private val calendarMonthFlow = MutableStateFlow(YearMonth.now())
+    val calendarMonth = calendarMonthFlow.asStateFlow()
+
+    var selectedCalendarDate by mutableStateOf<LocalDate>(LocalDate.now())
+
+    fun showCalendarMonth(month: YearMonth) {
+        calendarMonthFlow.value = month
+        val today = LocalDate.now()
+        selectedCalendarDate = if (YearMonth.from(today) == month) today else month.atDay(1)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val completedInMonth: StateFlow<List<CompletedTaskEntity>> = calendarMonthFlow
+        .flatMapLatest { month ->
+            val zone = ZoneId.systemDefault()
+            container.repository.completedTasksBetween(
+                month.atDay(1).atStartOfDay(zone).toInstant().toEpochMilli(),
+                month.plusMonths(1).atDay(1).atStartOfDay(zone).toInstant().toEpochMilli(),
+            )
+        }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     var quickAddText by mutableStateOf("")

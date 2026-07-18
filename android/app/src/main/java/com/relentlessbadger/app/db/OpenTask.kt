@@ -99,13 +99,14 @@ interface OpenTaskDao {
 }
 
 @Database(
-    entities = [OpenTaskEntity::class, TitleHistoryEntity::class],
-    version = 4,
+    entities = [OpenTaskEntity::class, TitleHistoryEntity::class, CompletedTaskEntity::class],
+    version = 5,
     exportSchema = true,
 )
 abstract class BadgerDb : RoomDatabase() {
     abstract fun openTaskDao(): OpenTaskDao
     abstract fun titleHistoryDao(): TitleHistoryDao
+    abstract fun completedTaskDao(): CompletedTaskDao
 
     companion object {
         val MIGRATION_2_3 = object : Migration(2, 3) {
@@ -128,6 +129,23 @@ abstract class BadgerDb : RoomDatabase() {
                 db.execSQL("ALTER TABLE open_tasks ADD COLUMN recurDaysOfWeek INTEGER")
                 db.execSQL("ALTER TABLE open_tasks ADD COLUMN seriesId TEXT")
                 db.execSQL("ALTER TABLE open_tasks ADD COLUMN pendingUpdate INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `completed_tasks` (" +
+                        "`id` TEXT NOT NULL, " +
+                        "`title` TEXT NOT NULL, " +
+                        "`completedAtMillis` INTEGER NOT NULL, " +
+                        "`seriesId` TEXT, " +
+                        "PRIMARY KEY(`id`))",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_completed_tasks_completedAtMillis` " +
+                        "ON `completed_tasks` (`completedAtMillis`)",
+                )
             }
         }
     }
